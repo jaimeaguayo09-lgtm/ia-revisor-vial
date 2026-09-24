@@ -1,19 +1,24 @@
-# IA Revisor Vial — Versión 1.6
+# IA Revisor Vial — Versión 1.7
 
-Extractor corregido después de revisar directamente el IMIV piloto.
+Se mantiene el extractor validado de la versión 1.6 y se separan tres capas:
 
-Hallazgo documental:
-- Cuadro 8.1 = Situación Base.
-- Cuadro 9.11 = Situación con Proyecto.
-- Cuadro 9.16 = Situación con Proyecto Mitigado.
-- El Cuadro 9.16 conserva internamente el rótulo “Grados de saturación - Situación Proyecto”.
-  Por eso no es válido clasificar el escenario usando sólo ese rótulo.
+1. Cumplimiento normativo:
+   Matriz normativa al consultor. Sólo contiene observaciones normativas o falta
+   de trazabilidad.
 
-La versión 1.6 clasifica por número/título del cuadro y mantiene ese escenario
-en las páginas de continuación.
+2. Alertas técnicas:
+   Nueva pestaña “Alertas comportamiento”. Detecta cuando el escenario Mitigado
+   empeora el GS respecto de Proyecto, sin calificarlo automáticamente como
+   incumplimiento.
 
-Control documental:
-- 1312 PM-L: 119 → 119 → 54
-- 1312 PT-L: 118 → 118 → 58
-- 1315 PM-L: 119 → 119 → 54
-- 1315 PT-L: 118 → 118 → 58
+   Prioridad interna:
+   - +1 a +4 pp: BAJA
+   - +5 a +9 pp: MEDIA
+   - >= +10 pp: ALTA
+
+3. Observaciones confirmadas:
+   Se mantienen separadas para errores determinísticos comprobados.
+
+Control del piloto:
+- Arco 1331 PM-L: 0,37 → 0,53 = +16 pp, alerta ALTA.
+- Arco 1331 PT-L: 0,36 → 0,58 = +22 pp, alerta ALTA.

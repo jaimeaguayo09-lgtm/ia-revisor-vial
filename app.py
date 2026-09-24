@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.6")
-st.caption("Revisión técnica 1.6: extractor basado en títulos de cuadro y contexto documental real del IMIV.")
+st.title("🛣️ IA Revisor Vial — Versión 1.7")
+st.caption("Revisión técnica 1.7: separa cumplimiento normativo, alertas técnicas de comportamiento anómalo y observaciones confirmadas.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -534,6 +534,57 @@ def build_arc_sheet(pages):
     return rows
 
 
+def build_behavior_alerts(pages):
+    """
+    Alertas técnicas independientes del cumplimiento normativo.
+    No se presentan como incumplimiento.
+
+    Regla 1.7:
+    - Si el escenario mitigado empeora el GS respecto del Proyecto:
+      +0,01 a +0,04 -> BAJA
+      +0,05 a +0,09 -> MEDIA
+      >= +0,10 -> ALTA
+    """
+    sheet = build_arc_sheet(pages)
+    rows=[]
+    n=1
+    for r in sheet:
+        try:
+            p=float(str(r["GS Proyecto"]).replace(",", "."))
+            m=float(str(r["GS Mitigado"]).replace(",", "."))
+        except Exception:
+            continue
+        d=m-p
+        if d <= 0:
+            continue
+        if d >= 0.10:
+            level="ALTA"
+        elif d >= 0.05:
+            level="MEDIA"
+        else:
+            level="BAJA"
+        rows.append({
+            "N°":n,
+            "Nivel":level,
+            "Arco":r["Arco"],
+            "Período":r["Período"],
+            "GS Proyecto":r["GS Proyecto"],
+            "GS Mitigado":r["GS Mitigado"],
+            "Δ Mitigado-Proyecto":f"+{d:.2f}".replace(".", ","),
+            "Página(s)":r["Página(s)"],
+            "Alerta técnica":(
+                f"El escenario mitigado aumenta el grado de saturación en {d*100:.0f} "
+                "puntos porcentuales respecto del escenario Proyecto."
+            ),
+            "Acción de revisión":(
+                "Verificar la causa del aumento, la codificación de la medida de mitigación "
+                "y la coherencia de la modelación. Esta alerta no constituye por sí sola "
+                "un incumplimiento normativo."
+            )
+        })
+        n+=1
+    return rows
+
 def build_consultant_matrix(pages):
     sheet = build_arc_sheet(pages)
     rows = []
@@ -637,7 +688,7 @@ if alerts:
     pr = sum(1 for x in alerts if x.get("Prioridad") == "REVISIÓN")
     st.caption(f"Prioridad de alertas: Alta {pa} · Media {pm} · Revisión {pr}")
 
-tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "📋 Matriz final consultor"])
+tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "⚠️ Alertas comportamiento", "📋 Matriz normativa consultor"])
 
 def show_rows(rows, empty_msg):
     if not rows:
@@ -703,7 +754,7 @@ with tabs[3]:
         st.download_button(
             "Descargar ficha consolidada CSV",
             df_sheet.to_csv(index=False).encode("utf-8-sig"),
-            file_name="ficha_consolidada_arcos_v16.csv",
+            file_name="ficha_consolidada_arcos_v17.csv",
             mime="text/csv"
         )
     else:
@@ -712,6 +763,21 @@ with tabs[3]:
 
 
 with tabs[4]:
+    behavior = build_behavior_alerts(pages)
+    st.caption("Alertas técnicas por comportamiento anómalo del escenario mitigado. No equivalen automáticamente a incumplimiento normativo.")
+    if behavior:
+        df_behavior = pd.DataFrame(behavior)
+        st.dataframe(df_behavior, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Descargar alertas de comportamiento CSV",
+            df_behavior.to_csv(index=False).encode("utf-8-sig"),
+            file_name="alertas_comportamiento_v17.csv",
+            mime="text/csv"
+        )
+    else:
+        st.success("No se detectaron aumentos del GS entre Proyecto y Mitigado.")
+
+with tabs[5]:
     matrix = build_consultant_matrix(pages)
     st.caption("Matriz reglamentaria de GS. Sólo incluye observaciones normativas o casos sin trazabilidad suficiente; las alertas internas no se convierten automáticamente en incumplimientos.")
     if matrix:
@@ -720,7 +786,7 @@ with tabs[4]:
         st.download_button(
             "Descargar matriz de observaciones CSV",
             df_matrix.to_csv(index=False).encode("utf-8-sig"),
-            file_name="matriz_observaciones_consultor_v16.csv",
+            file_name="matriz_normativa_consultor_v17.csv",
             mime="text/csv"
         )
     else:
