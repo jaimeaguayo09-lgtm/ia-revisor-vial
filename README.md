@@ -1,14 +1,12 @@
-# IA Revisor Vial — Prototipo 0.4
+# IA Revisor Vial — Prototipo 0.5
 
-Motor de revisión técnica trazable.
+Revisión técnica orientada a tablas y escenarios.
 
-Salidas separadas:
-- Observaciones confirmadas.
-- Alertas para revisión profesional.
-- Comprobaciones trazables/conformes.
-
-Incluye controles conservadores de consistencia documental, grados de saturación,
-trazabilidad dq/d2 y presencia de capítulos técnicos. No declara incumplimiento
-normativo sin una biblioteca normativa verificable.
+- Extrae filas de grados de saturación con arco, PM-L y PT-L.
+- Identifica escenario Actual, Base, Proyecto y Proyecto Mitigado.
+- Compara Base → Proyecto → Mitigado para el mismo arco/período.
+- Separa alertas de comprobaciones numéricas.
+- No declara incumplimiento normativo sin biblioteca normativa verificable.
+- Mantiene informe PDF y CSV.
 
 Main file: `app.py`.

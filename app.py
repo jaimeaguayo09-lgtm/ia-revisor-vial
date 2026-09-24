@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Prototipo 0.4")
-st.caption("Revisión técnica trazable: separa observaciones confirmadas, alertas para revisión profesional y comprobaciones conformes.")
+st.title("🛣️ IA Revisor Vial — Prototipo 0.5")
+st.caption("Revisión técnica por tablas y escenarios: identifica arco, período y evolución Base → Proyecto → Mitigado.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -69,125 +69,149 @@ def _pct(s):
     try: return float(s.replace(",", "."))
     except: return None
 
+def _rows_after_header(text, header_pattern):
+    m = re.search(header_pattern, text, re.I)
+    if not m: return []
+    tail = text[m.end():]
+    rows = []
+    # Typical extracted table row: ARC PM-L PT-L
+    for rm in re.finditer(r"(?m)(?<!\d)(\d{3,4})\s+(\d{1,3})\s+(\d{1,3})(?!\d)", tail):
+        arc, pm, pt = rm.group(1), int(rm.group(2)), int(rm.group(3))
+        if pm <= 200 and pt <= 200:
+            rows.append((arc, pm, pt))
+        if len(rows) >= 80: break
+    return rows
+
+def _scenario_tables(pages):
+    scenarios = {"ACTUAL": {}, "BASE": {}, "PROYECTO": {}, "MITIGADO": {}}
+    source_pages = {}
+    for p in pages:
+        t = p["text"]
+        tl = t.lower()
+        scen = None
+        if "grados de saturación - situación actual" in tl or "grados de saturacion - situacion actual" in tl:
+            scen = "ACTUAL"
+        elif "grados de saturación - situación base" in tl or "grados de saturacion - situacion base" in tl:
+            scen = "BASE"
+        elif ("situación con proyecto mitigado" in tl or "situacion con proyecto mitigado" in tl) and \
+             ("grados de saturación" in tl or "grados de saturacion" in tl):
+            scen = "MITIGADO"
+        elif "grados de saturación - situación proyecto" in tl or "grados de saturacion - situacion proyecto" in tl:
+            # Pages explicitly headed as mitigated take precedence.
+            scen = "MITIGADO" if ("proyecto mitigado" in tl) else "PROYECTO"
+
+        if scen:
+            rows = _rows_after_header(
+                t, r"grados?\s+de\s+saturaci[oó]n\s*-\s*situaci[oó]n\s+(?:actual|base|proyecto)"
+            )
+            for arc, pm, pt in rows:
+                scenarios[scen][arc] = {"PM-L": pm, "PT-L": pt, "page": p["page"]}
+            source_pages.setdefault(scen, set()).add(p["page"])
+    return scenarios, source_pages
+
 def technical_checks(pages, selected):
     confirmed, alerts, conforms = [], [], []
 
-    # 1) Consistencia documental: reutiliza extracción contextual estricta.
+    # Strict documentary consistency from v0.3/0.4.
     if "Consistencia documental" in selected:
         concepts = extract_concepts(pages)
         for concept, hits in concepts.items():
             vals = sorted(set(h["value"] for h in hits))
-            byval = defaultdict(list)
-            for h in hits: byval[h["value"]].append(h)
             if len(vals) > 1:
+                byval = defaultdict(list)
+                for h in hits: byval[h["value"]].append(h)
                 ev, pset = [], set()
                 for v in vals:
-                    h = byval[v][0]
-                    pset.add(h["page"])
+                    h = byval[v][0]; pset.add(h["page"])
                     ev.append(f"Valor {v} — pág. {h['page']}: {h['evidence']}")
                 confirmed.append({
-                    "Página": ", ".join(map(str, sorted(pset))),
-                    "Materia": "Consistencia documental",
-                    "Hallazgo": f"Se identificaron declaraciones explícitas con valores distintos para «{concept}»: {vals}.",
-                    "Evidencia": "\n\n".join(ev),
-                    "Comprobación": "Comparación entre expresiones explícitas referidas al mismo concepto.",
-                    "Clasificación": "INCONSISTENCIA",
-                    "Acción requerida": "Verificar el valor correcto y uniformar el estudio y sus anexos."
+                    "Página": ", ".join(map(str,sorted(pset))), "Materia":"Consistencia documental",
+                    "Hallazgo":f"Se identificaron declaraciones explícitas con valores distintos para «{concept}»: {vals}.",
+                    "Evidencia":"\n\n".join(ev),
+                    "Comprobación":"Comparación contextual estricta del mismo concepto.",
+                    "Clasificación":"INCONSISTENCIA",
+                    "Acción requerida":"Verificar el valor correcto y uniformar el estudio."
                 })
 
-    # 2) Trazabilidad de grados de saturación.
-    # No supone que un valor >85% sea incumplimiento: lo trata como alerta técnica.
+    scenarios, srcpages = _scenario_tables(pages)
+
+    # Scenario-aware saturation review.
     if "Capacidad y saturación" in selected or "Modelación" in selected:
-        sat_re = re.compile(
-            r"(?:grado(?:s)?\s+de\s+saturaci[oó]n|saturaci[oó]n)"
-            r".{0,220}?(?P<v>\d{1,3}(?:[.,]\d+)?)\s*%",
-            re.I
-        )
-        seen = set()
-        for p in pages:
-            txt = p["text"]
-            for m in sat_re.finditer(txt):
-                v = _pct(m.group("v"))
-                if v is None: continue
-                key = (p["page"], round(v,2))
-                if key in seen: continue
-                seen.add(key)
-                ev = snippet(txt, m.start(), m.end(), 180)
-                if v > 100:
+        # Individual high saturation alerts with scenario, arc and period.
+        for scen in ["ACTUAL","BASE","PROYECTO","MITIGADO"]:
+            for arc, vals in scenarios[scen].items():
+                for period in ["PM-L","PT-L"]:
+                    v = vals[period]
+                    if v > 85:
+                        alerts.append({
+                            "Página":str(vals["page"]), "Materia":"Capacidad y saturación",
+                            "Hallazgo":f"{scen.title()} — arco {arc} — {period}: grado de saturación {v}%.",
+                            "Evidencia":f"Tabla extraída del escenario {scen}; arco {arc}; {period}={v}%.",
+                            "Comprobación":"Lectura estructurada de fila de tabla de grados de saturación. El umbral se usa para priorizar revisión, no para declarar incumplimiento.",
+                            "Clasificación":"ALERTA TÉCNICA",
+                            "Acción requerida":"Contrastar el mismo arco/período entre Base, Proyecto y Mitigado."
+                        })
+
+        # Cross-scenario comparisons: BASE -> PROYECTO -> MITIGADO.
+        common = set(scenarios["BASE"]) & set(scenarios["PROYECTO"]) & set(scenarios["MITIGADO"])
+        for arc in sorted(common, key=lambda x:int(x)):
+            for period in ["PM-L","PT-L"]:
+                b = scenarios["BASE"][arc][period]
+                p = scenarios["PROYECTO"][arc][period]
+                m = scenarios["MITIGADO"][arc][period]
+                pg = f"{scenarios['BASE'][arc]['page']}, {scenarios['PROYECTO'][arc]['page']}, {scenarios['MITIGADO'][arc]['page']}"
+                delta = p-b
+                mit = m-p
+                evidence = f"Arco {arc} {period}: Base={b}%; Proyecto={p}%; Mitigado={m}%."
+                if p > b:
                     alerts.append({
-                        "Página": str(p["page"]), "Materia": "Capacidad y saturación",
-                        "Hallazgo": f"Se identificó un grado de saturación de {v:g}%, superior a 100%.",
-                        "Evidencia": ev,
-                        "Comprobación": "Detección de valor porcentual explícitamente asociado a grado de saturación.",
-                        "Clasificación": "ALERTA TÉCNICA",
-                        "Acción requerida": "Revisar el arco/período, su modelación y la respuesta de las medidas de mitigación."
+                        "Página":pg, "Materia":"Comparación de escenarios",
+                        "Hallazgo":f"Arco {arc} — {period}: aumenta de {b}% (Base) a {p}% (Proyecto), variación de {delta:+d} puntos porcentuales; mitigado={m}%.",
+                        "Evidencia":evidence,
+                        "Comprobación":"Comparación automática Base → Proyecto → Mitigado para el mismo arco y período.",
+                        "Clasificación":"ALERTA TÉCNICA",
+                        "Acción requerida":"Revisar la incidencia atribuible al proyecto y la eficacia de la mitigación."
                     })
-                elif v > 85:
+                if p > 85 and m <= 85:
+                    conforms.append({
+                        "Página":pg, "Materia":"Efecto de mitigación",
+                        "Hallazgo":f"Arco {arc} — {period}: el escenario Proyecto presenta {p}% y el Mitigado {m}%, quedando bajo 85% tras la medida.",
+                        "Evidencia":evidence,
+                        "Comprobación":"Comparación automática de escenarios para el mismo arco/período.",
+                        "Clasificación":"COMPROBACIÓN NUMÉRICA",
+                        "Acción requerida":"Mantener trazabilidad con la medida de mitigación asociada."
+                    })
+                elif p > 85 and m > 85:
                     alerts.append({
-                        "Página": str(p["page"]), "Materia": "Capacidad y saturación",
-                        "Hallazgo": f"Se identificó un grado de saturación de {v:g}%, que requiere seguimiento en la revisión técnica.",
-                        "Evidencia": ev,
-                        "Comprobación": "Detección de valor porcentual explícitamente asociado a grado de saturación. No se declara incumplimiento normativo.",
-                        "Clasificación": "ALERTA TÉCNICA",
-                        "Acción requerida": "Contrastar con situación base, con proyecto y mitigada, y verificar la conclusión del estudio."
+                        "Página":pg, "Materia":"Efecto de mitigación",
+                        "Hallazgo":f"Arco {arc} — {period}: permanece sobre 85% después del escenario mitigado ({p}% → {m}%).",
+                        "Evidencia":evidence,
+                        "Comprobación":"Comparación automática Proyecto → Mitigado.",
+                        "Clasificación":"ALERTA TÉCNICA",
+                        "Acción requerida":"Revisar si la medida propuesta aborda suficientemente este arco/período."
                     })
 
-    # 3) dq/d2: solo declara conforme cuando la propia fila/contexto contiene ambos
-    # valores y la comparación numérica es inequívoca.
-    if "Geometría" in selected or "Medidas de mitigación" in selected:
-        pair_re = re.compile(
-            r"(?:dq|d[qQ])\s*[/\-]\s*(?:d2|D2)?.{0,100}?"
-            r"(?P<a>\d{1,3}(?:[.,]\d+)?)\s*(?:m)?\s*[/\-]\s*"
-            r"(?P<b>\d{1,3}(?:[.,]\d+)?)\s*m?",
-            re.I
-        )
-        for p in pages:
-            for m in pair_re.finditer(p["text"]):
-                a, b = _pct(m.group("a")), _pct(m.group("b"))
-                if a is None or b is None: continue
-                conforms.append({
-                    "Página": str(p["page"]), "Materia": "Geometría / dq-d2",
-                    "Hallazgo": f"Se identificó un par de distancias dq/d2 = {a:g}/{b:g} m para trazabilidad.",
-                    "Evidencia": snippet(p["text"], m.start(), m.end(), 180),
-                    "Comprobación": "Extracción numérica del par dq/d2. La conformidad normativa no se afirma sin biblioteca normativa verificada.",
-                    "Clasificación": "COMPROBACIÓN TRAZADA",
-                    "Acción requerida": "Mantener como antecedente para comparación normativa posterior."
-                })
-
-    # 4) Presencia estructural de capítulos clave: si el documento no ofrece
-    # texto identificable, se genera alerta, no 'error'.
+    # Presence controls retained, explicitly labelled documentary.
     whole = " ".join(p["text"].lower() for p in pages)
     expected = {
-        "Aforos": ["aforo", "conteo vehicular"],
-        "Demanda": ["generación de viajes", "generacion de viajes", "demanda"],
-        "Modelación": ["modelación", "modelacion", "transyt"],
-        "Medidas de mitigación": ["medidas de mitigación", "medidas de mitigacion", "mitigación", "mitigacion"],
+        "Aforos":["aforo","conteo vehicular"],
+        "Demanda":["generación de viajes","generacion de viajes","demanda"],
+        "Modelación":["modelación","modelacion","transyt"],
+        "Medidas de mitigación":["medidas de mitigación","medidas de mitigacion","mitigación","mitigacion"],
     }
     for module, terms in expected.items():
-        if module in selected:
-            if any(t in whole for t in terms):
-                conforms.append({
-                    "Página": "—", "Materia": module,
-                    "Hallazgo": f"Se identificó contenido textual asociado al módulo «{module}».",
-                    "Evidencia": "Presencia documental detectada.",
-                    "Comprobación": "Control de presencia; no equivale a validación técnica del contenido.",
-                    "Clasificación": "COMPROBACIÓN DOCUMENTAL",
-                    "Acción requerida": "Continuar con las comprobaciones específicas del módulo."
-                })
-            else:
-                alerts.append({
-                    "Página": "—", "Materia": module,
-                    "Hallazgo": f"No se identificó automáticamente contenido textual suficiente asociado a «{module}».",
-                    "Evidencia": "Búsqueda textual en el PDF.",
-                    "Comprobación": "Control de presencia documental.",
-                    "Clasificación": "ALERTA TÉCNICA",
-                    "Acción requerida": "Revisar anexos, planos o contenido no extraíble como texto."
-                })
+        if module in selected and any(t in whole for t in terms):
+            conforms.append({
+                "Página":"—","Materia":module,
+                "Hallazgo":f"Se identificó contenido documental asociado al módulo «{module}».",
+                "Evidencia":"Presencia textual detectada.",
+                "Comprobación":"Control de presencia; no equivale a validación técnica.",
+                "Clasificación":"COMPROBACIÓN DOCUMENTAL",
+                "Acción requerida":"Continuar con controles técnicos específicos."
+            })
 
-    # IDs separados por tipo para que el informe sea legible.
-    for prefix, rows in [("OBS", confirmed), ("ALT", alerts), ("CHK", conforms)]:
-        for i, row in enumerate(rows, 1):
-            row["ID"] = f"{prefix}-{i:03d}"
+    for prefix, rows in [("OBS",confirmed),("ALT",alerts),("CHK",conforms)]:
+        for i,row in enumerate(rows,1): row["ID"]=f"{prefix}-{i:03d}"
     return confirmed, alerts, conforms
 
 def analyze(pages, selected):
