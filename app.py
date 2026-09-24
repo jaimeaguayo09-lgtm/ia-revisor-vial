@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.4")
-st.caption("Revisión técnica 1.9.4: corrige el alcance de variables del módulo aritmético y mantiene la lectura segura de los Cuadros 9.12 a 9.15.")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.5")
+st.caption("Revisión técnica 1.9.5: integra las observaciones aritméticas confirmadas al resumen general y al informe PDF.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -844,8 +844,35 @@ if st.button("Analizar estudio",type="primary"):
 
 confirmed, alerts, conforms = st.session_state.get("review04", ([], [], []))
 
+# Integración 1.9.5: el módulo aritmético validado alimenta el resumen general.
+arithmetic_summary = deterministic_arithmetic_checks(pages)
+arithmetic_confirmed = [
+    r for r in arithmetic_summary
+    if r.get("Clasificación") == "OBSERVACIÓN CONFIRMADA"
+]
+
+# Adaptación al esquema común del informe, sin modificar el parser aritmético.
+arithmetic_report = []
+for r in arithmetic_confirmed:
+    arithmetic_report.append({
+        "ID": r.get("ID",""),
+        "Prioridad": "CONFIRMADA",
+        "Página": str(r.get("Página","—")),
+        "Materia": r.get("Materia","Comprobación aritmética"),
+        "Hallazgo": r.get("Observación",""),
+        "Evidencia": (
+            f'Fuente: {r.get("Fuente","")}. '
+            f'Comprobación: {r.get("Comprobación","")}. '
+            f'Total informado: {r.get("Total informado","")}. '
+            f'Diferencia: {r.get("Diferencia","")}.'
+        ),
+        "Comprobación": r.get("Comprobación",""),
+        "Acción requerida": "Corregir el total informado y verificar la consistencia del cuadro correspondiente.",
+        "Clasificación": "OBSERVACIÓN CONFIRMADA"
+    })
+
 m1, m2, m3 = st.columns(3)
-m1.metric("Observaciones confirmadas", len(confirmed))
+m1.metric("Observaciones confirmadas", len(confirmed) + len(arithmetic_confirmed))
 m2.metric("Alertas técnicas", len(alerts))
 m3.metric("Comprobaciones", len(conforms))
 
@@ -892,7 +919,7 @@ with tabs[2]:
 
 # Informe: las observaciones y alertas se incorporan al PDF; las comprobaciones
 # quedan en un anexo de trazabilidad.
-all_report = confirmed + alerts + conforms
+all_report = confirmed + arithmetic_report + alerts + conforms
 if all_report:
     df_all = pd.DataFrame(all_report)
     st.divider()
@@ -945,7 +972,7 @@ with tabs[4]:
         st.success("No se detectaron aumentos del GS entre Proyecto y Mitigado.")
 
 with tabs[5]:
-    arithmetic = deterministic_arithmetic_checks(pages)
+    arithmetic = arithmetic_summary
     st.caption("Recalculo determinístico de totales. Una diferencia aritmética se clasifica como observación confirmada; no depende de interpretación normativa.")
     if arithmetic:
         df_arith = pd.DataFrame(arithmetic)
@@ -955,7 +982,7 @@ with tabs[5]:
         st.download_button(
             "Descargar comprobación aritmética CSV",
             df_arith.to_csv(index=False).encode("utf-8-sig"),
-            file_name="comprobacion_aritmetica_v19_4.csv",
+            file_name="comprobacion_aritmetica_v19_5.csv",
             mime="text/csv"
         )
     else:

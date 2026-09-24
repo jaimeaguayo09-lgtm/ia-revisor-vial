@@ -1,15 +1,13 @@
-# IA Revisor Vial — Versión 1.9.4
+# IA Revisor Vial — Versión 1.9.5
 
-Corrección puntual del NameError observado en Streamlit 1.9.3.
+Integración final del módulo aritmético validado:
 
-- La pestaña Comprobación aritmética calcula sus resultados en su propio alcance.
-- El contador superior usa un resumen aritmético definido antes de las métricas.
-- Se mantiene sin cambios el parser específico de Cuadros 9.12–9.15.
-- Se mantiene sin cambios el módulo validado de grados de saturación.
+- Mantiene intacto el parser de Cuadros 9.12–9.15.
+- El contador superior suma las observaciones aritméticas confirmadas.
+- Las observaciones aritméticas se incorporan al CSV general.
+- Las observaciones aritméticas se incorporan al Informe de Observaciones PDF.
+- No modifica grados de saturación, alertas de comportamiento ni matriz normativa.
 
-Control esperado del piloto:
-- Observaciones confirmadas: 3.
-- Cuadro 9.12: correcto.
-- Cuadro 9.13: 1 error.
-- Cuadro 9.14: 0 errores.
-- Cuadro 9.15: 2 errores.
+Caso piloto esperado:
+- Observaciones aritméticas confirmadas: 3.
+- Contador superior: 3, si no existen otras observaciones confirmadas.
