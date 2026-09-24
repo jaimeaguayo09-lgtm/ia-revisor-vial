@@ -1,20 +1,12 @@
-# IA Revisor Vial — Versión 1.8
+# IA Revisor Vial — Versión 1.8.1
 
-Se mantiene el extractor validado 1.6/1.7 y se agrega trazabilidad documental
-por escenario.
+Corrección menor sobre 1.8, sin modificar el extractor de escenarios validado.
 
-Cada arco/período puede mostrar:
-- Fuente Base / Página Base
-- Fuente Proyecto / Página Proyecto
-- Fuente Mitigado / Página Mitigado
+- Fuente Base: Cuadro 8.1.
+- Fuente Proyecto: Cuadro 9.11.
+- Fuente Mitigado: Cuadro 9.16.
+- Se conservan las páginas exactas detectadas por el parser.
+- Se corrige singular/plural: “1 punto porcentual” y “N puntos porcentuales”.
 
-Para el IMIV piloto:
-- Base: Cuadro 8.1
-- Proyecto: Cuadro 9.11
-- Mitigado: Cuadro 9.16
-
-La pestaña “Alertas comportamiento” deja de usar una referencia genérica de
-páginas y muestra separadamente la fuente y página del escenario Proyecto y
-del escenario Mitigado.
-
-La matriz normativa incorpora la misma trazabilidad.
+La corrección se aplica en la capa de trazabilidad posterior al parser para no
+alterar la extracción Base → Proyecto → Mitigado validada en el piloto.

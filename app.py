@@ -445,8 +445,18 @@ def _strict_scenario_tables(pages):
     """
     scenarios, source_pages = _scenario_tables(pages)
     out = {}
+    source_names = {
+        "BASE": "Cuadro 8.1",
+        "PROYECTO": "Cuadro 9.11",
+        "MITIGADO": "Cuadro 9.16",
+        "ACTUAL": "Situación Actual"
+    }
     for scen, arcs in scenarios.items():
-        out[scen] = {arc: dict(vals) for arc, vals in arcs.items()}
+        out[scen] = {}
+        for arc, vals in arcs.items():
+            copied = dict(vals)
+            copied["source"] = copied.get("source") or source_names.get(scen, scen)
+            out[scen][arc] = copied
     return out, source_pages
 
 def build_arc_sheet(pages):
@@ -587,7 +597,8 @@ def build_behavior_alerts(pages):
             "Página Mitigado":r.get("Página Mitigado", "—"),
             "Alerta técnica":(
                 f"El escenario mitigado aumenta el grado de saturación en {d*100:.0f} "
-                "puntos porcentuales respecto del escenario Proyecto."
+                + ("punto porcentual" if round(d*100) == 1 else "puntos porcentuales")
+                + " respecto del escenario Proyecto."
             ),
             "Acción de revisión":(
                 "Verificar la causa del aumento, la codificación de la medida de mitigación "
@@ -772,7 +783,7 @@ with tabs[3]:
         st.download_button(
             "Descargar ficha consolidada CSV",
             df_sheet.to_csv(index=False).encode("utf-8-sig"),
-            file_name="ficha_consolidada_arcos_v18.csv",
+            file_name="ficha_consolidada_arcos_v18_1.csv",
             mime="text/csv"
         )
     else:
@@ -789,7 +800,7 @@ with tabs[4]:
         st.download_button(
             "Descargar alertas de comportamiento CSV",
             df_behavior.to_csv(index=False).encode("utf-8-sig"),
-            file_name="alertas_comportamiento_v18.csv",
+            file_name="alertas_comportamiento_v18_1.csv",
             mime="text/csv"
         )
     else:
@@ -804,7 +815,7 @@ with tabs[5]:
         st.download_button(
             "Descargar matriz de observaciones CSV",
             df_matrix.to_csv(index=False).encode("utf-8-sig"),
-            file_name="matriz_normativa_consultor_v18.csv",
+            file_name="matriz_normativa_consultor_v18_1.csv",
             mime="text/csv"
         )
     else:
