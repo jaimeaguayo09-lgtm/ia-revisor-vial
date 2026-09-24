@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.6")
-st.caption("Revisión técnica 1.9.6: mejora el informe PDF con resumen ejecutivo y separación entre observaciones confirmadas, alertas técnicas y comprobaciones.")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.7")
+st.caption("Revisión técnica 1.9.7: mejora el informe PDF con resumen ejecutivo y separación entre observaciones confirmadas, alertas técnicas y comprobaciones.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -826,11 +826,21 @@ def make_pdf(project,source,n_pages,obs):
         story.append(Spacer(1,6))
         if not items:
             story.append(Paragraph("No se registraron resultados en esta categoría.",body)); return
-        rows=[["ID","Pág.","Materia","Clasificación","Observación"]]
+        # Todas las celdas variables se renderizan como Paragraph para permitir
+        # salto de línea dentro de ID, páginas múltiples y textos extensos.
+        cell=ParagraphStyle("cell_pdf_197",parent=small,fontSize=6.6,leading=8.2,wordWrap="LTR")
+        rows=[[Paragraph("<b>ID</b>",cell),Paragraph("<b>Pág.</b>",cell),
+               Paragraph("<b>Materia</b>",cell),Paragraph("<b>Clasificación</b>",cell),
+               Paragraph("<b>Observación</b>",cell)]]
         for x in items:
-            rows.append([str(x.get("ID","")),str(x.get("Página","—")),Paragraph(str(x.get("Materia","")),small),
-                         Paragraph(str(x.get("Clasificación","")),small),Paragraph(str(x.get("Hallazgo","")),small)])
-        t=Table(rows,colWidths=[1.35*cm,1.35*cm,3.0*cm,3.1*cm,8.2*cm],repeatRows=1)
+            page_txt=str(x.get("Página","—")).replace(", ",",<br/>")
+            rows.append([Paragraph(str(x.get("ID","")),cell),Paragraph(page_txt,cell),
+                         Paragraph(str(x.get("Materia","")),cell),
+                         Paragraph(str(x.get("Clasificación","")),cell),
+                         Paragraph(str(x.get("Hallazgo","")),cell)])
+        # Ancho total 17,0 cm, dentro del ancho útil de A4 (18 cm).
+        # Se reserva más ancho para páginas y observación para evitar superposición.
+        t=Table(rows,colWidths=[1.25*cm,1.75*cm,2.75*cm,3.15*cm,8.10*cm],repeatRows=1)
         t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.3,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
                                ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("VALIGN",(0,0),(-1,-1),"TOP"),
                                ("LEFTPADDING",(0,0),(-1,-1),3),("RIGHTPADDING",(0,0),(-1,-1),3)]))

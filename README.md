@@ -1,13 +1,9 @@
-# IA Revisor Vial — Versión 1.9.5
+# IA Revisor Vial — Versión 1.9.7
 
-Integración final del módulo aritmético validado:
+Corrección de maquetación del PDF:
 
-- Mantiene intacto el parser de Cuadros 9.12–9.15.
-- El contador superior suma las observaciones aritméticas confirmadas.
-- Las observaciones aritméticas se incorporan al CSV general.
-- Las observaciones aritméticas se incorporan al Informe de Observaciones PDF.
-- No modifica grados de saturación, alertas de comportamiento ni matriz normativa.
-
-Caso piloto esperado:
-- Observaciones aritméticas confirmadas: 3.
-- Contador superior: 3, si no existen otras observaciones confirmadas.
+- Evita superposición entre ID, páginas, materia y clasificación.
+- Las páginas múltiples se muestran en líneas separadas dentro de su celda.
+- Todas las celdas variables usan Paragraph de ReportLab y admiten salto de línea.
+- Se reajustan los anchos de columnas sin modificar el motor de revisión.
+- Mantiene 3 observaciones confirmadas, 23 alertas y 17 comprobaciones del caso piloto validado.
