@@ -648,6 +648,105 @@ def build_consultant_matrix(pages):
     return rows
 
 
+def _table_block(text, table_no):
+    pat = re.compile(
+        rf"Cuadro\s+N?[°º]?\s*{re.escape(table_no)}\s*:(.*?)(?=Cuadro\s+N?[°º]?\s*\d+\.\d+\s*:|$)",
+        re.I | re.S
+    )
+    m = pat.search(text)
+    return m.group(1) if m else ""
+
+def _numbers_after_label(block, label):
+    m = re.search(rf"\b{re.escape(label)}\b\s+([^\n\r]+)", block, re.I)
+    if not m:
+        return []
+    vals=[]
+    for x in re.findall(r"(?<!\$)\b\d+(?:[.,]\d+)?\b", m.group(1)):
+        try:
+            vals.append(float(x.replace(".","").replace(",",".")))
+        except Exception:
+            pass
+    return vals
+
+def deterministic_arithmetic_checks(pages):
+    """
+    Recalcula totales visibles de los Cuadros 9.12 a 9.15.
+    Sólo genera OBSERVACIÓN CONFIRMADA cuando la igualdad aritmética no cierra.
+    """
+    results=[]
+    full="\n".join(p["text"] for p in pages)
+
+    # Tabla, materia, tipo: tiempo (PM+PT=Total) o combustible.
+    specs=[
+        ("9.12","Tiempo de viaje transporte privado","time"),
+        ("9.13","Tiempo de viaje transporte público","time"),
+        ("9.14","Consumo combustible transporte privado","fuel"),
+        ("9.15","Consumo combustible transporte público","fuel"),
+    ]
+    for table_no,matter,kind in specs:
+        block=_table_block(full,table_no)
+        if not block:
+            continue
+
+        # Página real detectada por aparición del número de cuadro.
+        page="—"
+        for pg in pages:
+            if re.search(rf"Cuadro\s+N?[°º]?\s*{re.escape(table_no)}\s*:", pg["text"], re.I):
+                page=pg["page"]; break
+
+        pm=_numbers_after_label(block,"PM-L")
+        pt=_numbers_after_label(block,"PT-L")
+        total=_numbers_after_label(block,"Total")
+
+        if kind=="time":
+            if len(pm)>=1 and len(pt)>=1 and len(total)>=1:
+                calc=pm[0]+pt[0]
+                informed=total[0]
+                ok=abs(calc-informed)<0.001
+                results.append({
+                    "ID":f"AR-{table_no}",
+                    "Página":page,
+                    "Fuente":f"Cuadro {table_no}",
+                    "Materia":matter,
+                    "Comprobación":f"{pm[0]:g} + {pt[0]:g} = {calc:g}",
+                    "Total informado":f"{informed:g}",
+                    "Diferencia":f"{informed-calc:+g}",
+                    "Clasificación":"COMPROBACIÓN CORRECTA" if ok else "OBSERVACIÓN CONFIRMADA",
+                    "Observación":(
+                        "La suma de los períodos coincide con el total informado."
+                        if ok else
+                        f"El total informado ({informed:g}) no coincide con la suma PM-L + PT-L ({calc:g})."
+                    )
+                })
+        else:
+            # Esperado: Marcha, Ralentí, Total [y luego costo].
+            if len(pm)>=3 and len(pt)>=3 and len(total)>=3:
+                checks=[
+                    ("PM-L: Marcha + Ralentí = Total",pm[0]+pm[1],pm[2]),
+                    ("PT-L: Marcha + Ralentí = Total",pt[0]+pt[1],pt[2]),
+                    ("Total Marcha: PM-L + PT-L",pm[0]+pt[0],total[0]),
+                    ("Total Ralentí: PM-L + PT-L",pm[1]+pt[1],total[1]),
+                    ("Total general: PM-L + PT-L",pm[2]+pt[2],total[2]),
+                ]
+                for j,(label,calc,informed) in enumerate(checks,1):
+                    ok=abs(calc-informed)<0.001
+                    results.append({
+                        "ID":f"AR-{table_no}-{j}",
+                        "Página":page,
+                        "Fuente":f"Cuadro {table_no}",
+                        "Materia":matter,
+                        "Comprobación":f"{label}: calculado {calc:g}",
+                        "Total informado":f"{informed:g}",
+                        "Diferencia":f"{informed-calc:+g}",
+                        "Clasificación":"COMPROBACIÓN CORRECTA" if ok else "OBSERVACIÓN CONFIRMADA",
+                        "Observación":(
+                            "La operación aritmética coincide con el valor informado."
+                            if ok else
+                            f"El valor informado ({informed:g}) no coincide con el valor recalculado ({calc:g})."
+                        )
+                    })
+    return results
+
 def analyze(pages, selected):
     return technical_checks(pages, selected)
 
@@ -717,7 +816,7 @@ if alerts:
     pr = sum(1 for x in alerts if x.get("Prioridad") == "REVISIÓN")
     st.caption(f"Prioridad de alertas: Alta {pa} · Media {pm} · Revisión {pr}")
 
-tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "⚠️ Alertas comportamiento", "📋 Matriz normativa consultor"])
+tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "⚠️ Alertas comportamiento", "🧮 Comprobación aritmética", "📋 Matriz normativa consultor"])
 
 def show_rows(rows, empty_msg):
     if not rows:
@@ -807,6 +906,23 @@ with tabs[4]:
         st.success("No se detectaron aumentos del GS entre Proyecto y Mitigado.")
 
 with tabs[5]:
+    arithmetic = deterministic_arithmetic_checks(pages)
+    st.caption("Recalculo determinístico de totales. Una diferencia aritmética se clasifica como observación confirmada; no depende de interpretación normativa.")
+    if arithmetic:
+        df_arith = pd.DataFrame(arithmetic)
+        st.dataframe(df_arith, use_container_width=True, hide_index=True)
+        confirmed_arith = df_arith[df_arith["Clasificación"] == "OBSERVACIÓN CONFIRMADA"]
+        st.metric("Errores aritméticos confirmados", len(confirmed_arith))
+        st.download_button(
+            "Descargar comprobación aritmética CSV",
+            df_arith.to_csv(index=False).encode("utf-8-sig"),
+            file_name="comprobacion_aritmetica_v19.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("No se identificaron las tablas 9.12 a 9.15 con estructura suficiente para recalcular.")
+
+with tabs[6]:
     matrix = build_consultant_matrix(pages)
     st.caption("Matriz reglamentaria de GS. Sólo incluye observaciones normativas o casos sin trazabilidad suficiente; las alertas internas no se convierten automáticamente en incumplimientos.")
     if matrix:

@@ -1,12 +1,19 @@
-# IA Revisor Vial — Versión 1.8.1
+# IA Revisor Vial — Versión 1.9
 
-Corrección menor sobre 1.8, sin modificar el extractor de escenarios validado.
+Nuevo módulo determinístico de comprobación aritmética para los Cuadros 9.12–9.15:
+- Tiempo de viaje privado.
+- Tiempo de viaje público.
+- Combustible privado.
+- Combustible público.
 
-- Fuente Base: Cuadro 8.1.
-- Fuente Proyecto: Cuadro 9.11.
-- Fuente Mitigado: Cuadro 9.16.
-- Se conservan las páginas exactas detectadas por el parser.
-- Se corrige singular/plural: “1 punto porcentual” y “N puntos porcentuales”.
+El módulo recalcula sumas visibles y sólo clasifica como OBSERVACIÓN CONFIRMADA
+cuando el valor informado no coincide con la operación matemática.
 
-La corrección se aplica en la capa de trazabilidad posterior al parser para no
-alterar la extracción Base → Proyecto → Mitigado validada en el piloto.
+Controles documentales del piloto:
+- Cuadro 9.12: 224 + 212 = 436, correcto.
+- Cuadro 9.13: 11 + 10 = 21; el informe indica 20.
+- Cuadro 9.14: operaciones principales consistentes.
+- Cuadro 9.15: PM-L 35 + PT-L 32 = 67; el informe indica total 66.
+  Además, Ralentí 17 + 15 = 32; el total informado es 31.
+
+La nueva pestaña es “Comprobación aritmética”.
