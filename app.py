@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Prototipo 0.5")
-st.caption("Revisión técnica por tablas y escenarios: identifica arco, período y evolución Base → Proyecto → Mitigado.")
+st.title("🛣️ IA Revisor Vial — Prototipo 0.6")
+st.caption("Revisión consolidada por arco y período: compara Actual → Base → Proyecto → Mitigado y reduce alertas repetitivas.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -112,7 +112,7 @@ def _scenario_tables(pages):
 def technical_checks(pages, selected):
     confirmed, alerts, conforms = [], [], []
 
-    # Strict documentary consistency from v0.3/0.4.
+    # Consistencia documental estricta.
     if "Consistencia documental" in selected:
         concepts = extract_concepts(pages)
         for concept, hits in concepts.items():
@@ -122,76 +122,110 @@ def technical_checks(pages, selected):
                 for h in hits: byval[h["value"]].append(h)
                 ev, pset = [], set()
                 for v in vals:
-                    h = byval[v][0]; pset.add(h["page"])
+                    h = byval[v][0]
+                    pset.add(h["page"])
                     ev.append(f"Valor {v} — pág. {h['page']}: {h['evidence']}")
                 confirmed.append({
-                    "Página": ", ".join(map(str,sorted(pset))), "Materia":"Consistencia documental",
-                    "Hallazgo":f"Se identificaron declaraciones explícitas con valores distintos para «{concept}»: {vals}.",
-                    "Evidencia":"\n\n".join(ev),
-                    "Comprobación":"Comparación contextual estricta del mismo concepto.",
-                    "Clasificación":"INCONSISTENCIA",
-                    "Acción requerida":"Verificar el valor correcto y uniformar el estudio."
+                    "Página": ", ".join(map(str, sorted(pset))),
+                    "Materia": "Consistencia documental",
+                    "Hallazgo": f"Se identificaron declaraciones explícitas con valores distintos para «{concept}»: {vals}.",
+                    "Evidencia": "\n\n".join(ev),
+                    "Comprobación": "Comparación contextual estricta del mismo concepto.",
+                    "Clasificación": "INCONSISTENCIA",
+                    "Acción requerida": "Verificar el valor correcto y uniformar el estudio."
                 })
 
     scenarios, srcpages = _scenario_tables(pages)
 
-    # Scenario-aware saturation review.
+    # Una ficha consolidada por arco/período.
     if "Capacidad y saturación" in selected or "Modelación" in selected:
-        # Individual high saturation alerts with scenario, arc and period.
-        for scen in ["ACTUAL","BASE","PROYECTO","MITIGADO"]:
-            for arc, vals in scenarios[scen].items():
-                for period in ["PM-L","PT-L"]:
-                    v = vals[period]
-                    if v > 85:
+        arcs = set()
+        for scen in scenarios.values():
+            arcs |= set(scen.keys())
+
+        for arc in sorted(arcs, key=lambda x:int(x)):
+            for period in ["PM-L", "PT-L"]:
+                vals = {}
+                pages_used = []
+                for scen in ["ACTUAL", "BASE", "PROYECTO", "MITIGADO"]:
+                    if arc in scenarios[scen]:
+                        vals[scen] = scenarios[scen][arc][period]
+                        pages_used.append(str(scenarios[scen][arc]["page"]))
+
+                if not vals:
+                    continue
+
+                chain = " → ".join(
+                    f"{k.title()}={vals[k]}%"
+                    for k in ["ACTUAL","BASE","PROYECTO","MITIGADO"] if k in vals
+                )
+                pg = ", ".join(dict.fromkeys(pages_used))
+
+                # Prioriza comparación Base → Proyecto → Mitigado.
+                if all(k in vals for k in ["BASE","PROYECTO","MITIGADO"]):
+                    b, p, m = vals["BASE"], vals["PROYECTO"], vals["MITIGADO"]
+                    dp = p - b
+                    dm = m - p
+
+                    if p > b or p > 85:
+                        status = []
+                        if p > b:
+                            status.append(f"el escenario Proyecto aumenta {dp:+d} puntos porcentuales respecto de Base")
+                        if p > 85:
+                            status.append(f"Proyecto alcanza {p}%")
+                        if m < p:
+                            status.append(f"Mitigado reduce {abs(dm)} puntos porcentuales respecto de Proyecto")
+                        elif m > p:
+                            status.append(f"Mitigado aumenta {dm:+d} puntos porcentuales respecto de Proyecto")
+                        else:
+                            status.append("Mitigado no modifica el valor respecto de Proyecto")
+
                         alerts.append({
-                            "Página":str(vals["page"]), "Materia":"Capacidad y saturación",
-                            "Hallazgo":f"{scen.title()} — arco {arc} — {period}: grado de saturación {v}%.",
-                            "Evidencia":f"Tabla extraída del escenario {scen}; arco {arc}; {period}={v}%.",
-                            "Comprobación":"Lectura estructurada de fila de tabla de grados de saturación. El umbral se usa para priorizar revisión, no para declarar incumplimiento.",
-                            "Clasificación":"ALERTA TÉCNICA",
-                            "Acción requerida":"Contrastar el mismo arco/período entre Base, Proyecto y Mitigado."
+                            "Página": pg,
+                            "Materia": "Evolución de saturación",
+                            "Hallazgo": f"Arco {arc} — {period}: " + "; ".join(status) + ".",
+                            "Evidencia": f"{chain}.",
+                            "Comprobación": "Comparación consolidada del mismo arco y período entre escenarios Base → Proyecto → Mitigado.",
+                            "Clasificación": "ALERTA TÉCNICA CONSOLIDADA",
+                            "Acción requerida": "Revisar la incidencia atribuible al proyecto y vincular la variación con la medida de mitigación correspondiente."
                         })
 
-        # Cross-scenario comparisons: BASE -> PROYECTO -> MITIGADO.
-        common = set(scenarios["BASE"]) & set(scenarios["PROYECTO"]) & set(scenarios["MITIGADO"])
-        for arc in sorted(common, key=lambda x:int(x)):
-            for period in ["PM-L","PT-L"]:
-                b = scenarios["BASE"][arc][period]
-                p = scenarios["PROYECTO"][arc][period]
-                m = scenarios["MITIGADO"][arc][period]
-                pg = f"{scenarios['BASE'][arc]['page']}, {scenarios['PROYECTO'][arc]['page']}, {scenarios['MITIGADO'][arc]['page']}"
-                delta = p-b
-                mit = m-p
-                evidence = f"Arco {arc} {period}: Base={b}%; Proyecto={p}%; Mitigado={m}%."
-                if p > b:
-                    alerts.append({
-                        "Página":pg, "Materia":"Comparación de escenarios",
-                        "Hallazgo":f"Arco {arc} — {period}: aumenta de {b}% (Base) a {p}% (Proyecto), variación de {delta:+d} puntos porcentuales; mitigado={m}%.",
-                        "Evidencia":evidence,
-                        "Comprobación":"Comparación automática Base → Proyecto → Mitigado para el mismo arco y período.",
-                        "Clasificación":"ALERTA TÉCNICA",
-                        "Acción requerida":"Revisar la incidencia atribuible al proyecto y la eficacia de la mitigación."
-                    })
-                if p > 85 and m <= 85:
-                    conforms.append({
-                        "Página":pg, "Materia":"Efecto de mitigación",
-                        "Hallazgo":f"Arco {arc} — {period}: el escenario Proyecto presenta {p}% y el Mitigado {m}%, quedando bajo 85% tras la medida.",
-                        "Evidencia":evidence,
-                        "Comprobación":"Comparación automática de escenarios para el mismo arco/período.",
-                        "Clasificación":"COMPROBACIÓN NUMÉRICA",
-                        "Acción requerida":"Mantener trazabilidad con la medida de mitigación asociada."
-                    })
-                elif p > 85 and m > 85:
-                    alerts.append({
-                        "Página":pg, "Materia":"Efecto de mitigación",
-                        "Hallazgo":f"Arco {arc} — {period}: permanece sobre 85% después del escenario mitigado ({p}% → {m}%).",
-                        "Evidencia":evidence,
-                        "Comprobación":"Comparación automática Proyecto → Mitigado.",
-                        "Clasificación":"ALERTA TÉCNICA",
-                        "Acción requerida":"Revisar si la medida propuesta aborda suficientemente este arco/período."
-                    })
+                    if p > 85 and m <= 85:
+                        conforms.append({
+                            "Página": pg,
+                            "Materia": "Efecto de mitigación",
+                            "Hallazgo": f"Arco {arc} — {period}: Proyecto={p}% y Mitigado={m}%; la modelación muestra una reducción de {p-m} puntos porcentuales.",
+                            "Evidencia": f"{chain}.",
+                            "Comprobación": "Comparación numérica del mismo arco/período Proyecto → Mitigado.",
+                            "Clasificación": "COMPROBACIÓN NUMÉRICA",
+                            "Acción requerida": "Verificar que la medida modelada corresponda a la medida descrita y representada en planos."
+                        })
+                    elif p > 85 and m > 85:
+                        alerts.append({
+                            "Página": pg,
+                            "Materia": "Efecto de mitigación",
+                            "Hallazgo": f"Arco {arc} — {period}: permanece sobre 85% en el escenario mitigado ({p}% → {m}%).",
+                            "Evidencia": f"{chain}.",
+                            "Comprobación": "Comparación numérica Proyecto → Mitigado.",
+                            "Clasificación": "ALERTA TÉCNICA CONSOLIDADA",
+                            "Acción requerida": "Revisar la suficiencia de la medida para este arco/período."
+                        })
 
-    # Presence controls retained, explicitly labelled documentary.
+                # Si no existe cadena completa, conserva solo casos altos y los agrupa.
+                else:
+                    vmax = max(vals.values())
+                    if vmax > 85:
+                        alerts.append({
+                            "Página": pg,
+                            "Materia": "Capacidad y saturación",
+                            "Hallazgo": f"Arco {arc} — {period}: se identifican valores que requieren revisión ({chain}).",
+                            "Evidencia": f"{chain}.",
+                            "Comprobación": "Consolidación de escenarios disponibles para el mismo arco/período.",
+                            "Clasificación": "ALERTA TÉCNICA",
+                            "Acción requerida": "Completar la trazabilidad entre escenarios y revisar la tabla fuente."
+                        })
+
+    # Presencia documental, sin confundirla con conformidad técnica.
     whole = " ".join(p["text"].lower() for p in pages)
     expected = {
         "Aforos":["aforo","conteo vehicular"],
@@ -202,7 +236,8 @@ def technical_checks(pages, selected):
     for module, terms in expected.items():
         if module in selected and any(t in whole for t in terms):
             conforms.append({
-                "Página":"—","Materia":module,
+                "Página":"—",
+                "Materia":module,
                 "Hallazgo":f"Se identificó contenido documental asociado al módulo «{module}».",
                 "Evidencia":"Presencia textual detectada.",
                 "Comprobación":"Control de presencia; no equivale a validación técnica.",
@@ -211,7 +246,8 @@ def technical_checks(pages, selected):
             })
 
     for prefix, rows in [("OBS",confirmed),("ALT",alerts),("CHK",conforms)]:
-        for i,row in enumerate(rows,1): row["ID"]=f"{prefix}-{i:03d}"
+        for i,row in enumerate(rows,1):
+            row["ID"]=f"{prefix}-{i:03d}"
     return confirmed, alerts, conforms
 
 def analyze(pages, selected):

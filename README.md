@@ -1,12 +1,15 @@
-# IA Revisor Vial — Prototipo 0.5
+# IA Revisor Vial — Prototipo 0.6
 
-Revisión técnica orientada a tablas y escenarios.
+Revisión consolidada por arco y período.
 
-- Extrae filas de grados de saturación con arco, PM-L y PT-L.
-- Identifica escenario Actual, Base, Proyecto y Proyecto Mitigado.
-- Compara Base → Proyecto → Mitigado para el mismo arco/período.
-- Separa alertas de comprobaciones numéricas.
+## Cambios
+- Agrupa resultados por arco y período.
+- Consolida Actual, Base, Proyecto y Mitigado.
+- Calcula variaciones en puntos porcentuales.
+- Reduce alertas repetitivas.
+- Separa alertas técnicas de comprobaciones numéricas.
+- Mantiene trazabilidad de páginas y evidencia.
+- Genera CSV e Informe Técnico PDF.
 - No declara incumplimiento normativo sin biblioteca normativa verificable.
-- Mantiene informe PDF y CSV.
 
 Main file: `app.py`.
