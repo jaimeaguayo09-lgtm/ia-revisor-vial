@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.2")
-st.caption("Revisión técnica 1.2: matriz final de observaciones, evidencia numérica, acción requerida y trazabilidad.")
+st.title("🛣️ IA Revisor Vial — Versión 1.3")
+st.caption("Revisión técnica 1.3: evaluación reglamentaria del grado de saturación conforme al art. 3.6.11 del DS N°30.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -439,14 +439,21 @@ def build_arc_sheet(pages):
             else:
                 impact = "BAJO (0,01–0,04)"
 
-            if b is None or p is None:
+            # Evaluación reglamentaria GS — art. 3.6.11 letra b), DS N°30.
+            if b is None or p is None or m is None:
                 priority = "REQUIERE REVISIÓN PROFESIONAL"
-            elif p > 100 or delta >= 10:
-                priority = "OBSERVACIÓN — ALTA"
-            elif p > 85 or delta >= 5:
-                priority = "OBSERVACIÓN — MEDIA"
+            elif b <= 85:
+                if p <= 85:
+                    priority = "SIN OBSERVACIÓN NORMATIVA"
+                elif m <= 85:
+                    priority = "MITIGACIÓN RESTABLECE UMBRAL"
+                else:
+                    priority = "OBSERVACIÓN NORMATIVA"
             else:
-                priority = "SIN OBSERVACIÓN"
+                if m <= b + 1:
+                    priority = "CONDICIÓN BASE >85% — CUMPLE REGLA +1%"
+                else:
+                    priority = "OBSERVACIÓN NORMATIVA"
 
             if p is not None and m is not None:
                 if m < p:
@@ -482,46 +489,33 @@ def build_consultant_matrix(pages):
     n = 1
     for r in sheet:
         decision = r["Prioridad"]
-        # The final matrix focuses on items that require action/review.
-        if decision == "SIN OBSERVACIÓN":
+        if decision not in ["OBSERVACIÓN NORMATIVA", "REQUIERE REVISIÓN PROFESIONAL"]:
             continue
-
         evidence = (
             f"GS Base={r['GS Base']}; GS Proyecto={r['GS Proyecto']}; "
             f"Δ Proyecto-Base={r['Δ Proyecto-Base']}; GS Mitigado={r['GS Mitigado']}; "
             f"Δ Mitigado-Proyecto={r['Δ Mitigado-Proyecto']}."
         )
-
-        if decision.startswith("OBSERVACIÓN"):
-            obs = (
-                f"Arco {r['Arco']} — {r['Período']}: revisar condición operacional "
-                f"({r['Estado operacional']}) e impacto incremental ({r['Impacto incremental']})."
-            )
-            action = (
-                "Justificar técnicamente el resultado y verificar la suficiencia de las medidas de mitigación, "
-                "manteniendo trazabilidad con la modelación y cuadros del estudio."
-            )
+        if decision == "OBSERVACIÓN NORMATIVA":
+            obs = (f"Arco {r['Arco']} — {r['Período']}: revisar los grados de saturación "
+                   "informados conforme al parámetro reglamentario de semejanza.")
+            action = ("Revisar la modelación y acreditar el cumplimiento del artículo 3.6.11 letra b) "
+                      "del DS N°30: si Base no supera 85%, cuando Proyecto supera 85% la mitigación "
+                      "debe disminuir el GS hasta 85% o menos; si Base ya supera 85%, el GS mitigado "
+                      "no debe aumentar más de 1 punto porcentual respecto de Base.")
         else:
-            obs = (
-                f"Arco {r['Arco']} — {r['Período']}: no fue posible reconstruir de forma completa "
-                "la comparación Base → Proyecto."
-            )
-            action = "Completar o aclarar la trazabilidad de los datos antes de emitir conclusión técnica."
-
+            obs = (f"Arco {r['Arco']} — {r['Período']}: no fue posible reconstruir de forma "
+                   "inequívoca Base → Proyecto → Mitigado.")
+            action = "Completar la trazabilidad antes de concluir cumplimiento reglamentario."
         rows.append({
-            "N°": n,
-            "Clasificación": decision,
-            "Arco": r["Arco"],
-            "Período": r["Período"],
-            "Página(s)": r["Página(s)"],
-            "Antecedente revisado": "Grado de saturación / evolución de escenarios",
-            "Observación": obs,
-            "Evidencia numérica": evidence,
-            "Efecto mitigación": r["Efecto mitigación"],
-            "Acción requerida": action
-        })
+            "N°":n,"Clasificación":decision,"Arco":r["Arco"],"Período":r["Período"],
+            "Página(s)":r["Página(s)"],
+            "Antecedente revisado":"Grado de saturación — art. 3.6.11 letra b), DS N°30",
+            "Observación":obs,"Evidencia numérica":evidence,
+            "Efecto mitigación":r["Efecto mitigación"],"Acción requerida":action})
         n += 1
     return rows
+
 
 def analyze(pages, selected):
     return technical_checks(pages, selected)
@@ -668,7 +662,7 @@ with tabs[3]:
 
 with tabs[4]:
     matrix = build_consultant_matrix(pages)
-    st.caption("Matriz destinada a formular observaciones al consultor. Se excluyen automáticamente los arcos clasificados SIN OBSERVACIÓN.")
+    st.caption("Matriz reglamentaria de GS. Sólo incluye observaciones normativas o casos sin trazabilidad suficiente; las alertas internas no se convierten automáticamente en incumplimientos.")
     if matrix:
         df_matrix = pd.DataFrame(matrix)
         st.dataframe(df_matrix, use_container_width=True, hide_index=True)
