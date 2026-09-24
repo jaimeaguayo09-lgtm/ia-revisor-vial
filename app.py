@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.8")
-st.caption("Revisión técnica 1.9.8: unifica las observaciones confirmadas del motor general y del módulo aritmético en la interfaz y el informe PDF.")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.9")
+st.caption("Revisión técnica 1.9.9: centraliza observaciones confirmadas, alertas y comprobaciones para que resumen, pestañas, CSV y PDF utilicen exactamente los mismos resultados.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -912,15 +912,27 @@ for r in arithmetic_confirmed:
         "Clasificación": "OBSERVACIÓN CONFIRMADA"
     })
 
-m1, m2, m3 = st.columns(3)
-m1.metric("Observaciones confirmadas", len(confirmed) + len(arithmetic_confirmed))
-m2.metric("Alertas técnicas", len(alerts))
-m3.metric("Comprobaciones", len(conforms))
+# Fuente única de resultados 1.9.9.
+# Desde este punto, contador, pestañas, CSV y PDF consumen las mismas colecciones.
+review_results = {
+    "confirmed": confirmed + arithmetic_report,
+    "alerts": alerts,
+    "checks": conforms,
+}
 
-if alerts:
-    pa = sum(1 for x in alerts if x.get("Prioridad") == "ALTA")
-    pm = sum(1 for x in alerts if x.get("Prioridad") == "MEDIA")
-    pr = sum(1 for x in alerts if x.get("Prioridad") == "REVISIÓN")
+confirmed_all = review_results["confirmed"]
+alerts_all = review_results["alerts"]
+checks_all = review_results["checks"]
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Observaciones confirmadas", len(confirmed_all))
+m2.metric("Alertas técnicas", len(alerts_all))
+m3.metric("Comprobaciones", len(checks_all))
+
+if alerts_all:
+    pa = sum(1 for x in alerts_all if x.get("Prioridad") == "ALTA")
+    pm = sum(1 for x in alerts_all if x.get("Prioridad") == "MEDIA")
+    pr = sum(1 for x in alerts_all if x.get("Prioridad") == "REVISIÓN")
     st.caption(f"Prioridad de alertas: Alta {pa} · Media {pm} · Revisión {pr}")
 
 tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "⚠️ Alertas comportamiento", "🧮 Comprobación aritmética", "📋 Matriz normativa consultor"])
@@ -947,21 +959,19 @@ def show_rows(rows, empty_msg):
     st.markdown(f"**Hallazgo:** {x['Hallazgo']}")
     st.markdown(f"**Comprobación:** {x['Comprobación']}")
     st.markdown(f"**Acción requerida:** {x['Acción requerida']}")
-    if x["Evidencia"]:
+    if x.get("Evidencia"):
         st.markdown("**Evidencia:**")
         st.code(x["Evidencia"])
 
 with tabs[0]:
-    confirmed_ui = confirmed + arithmetic_report
-    show_rows(confirmed, "No se demostraron observaciones confirmadas con las reglas automáticas activas.")
+    show_rows(confirmed_all, "No se demostraron observaciones confirmadas con las reglas automáticas activas.")
 with tabs[1]:
-    show_rows(alerts, "No se generaron alertas técnicas con las reglas automáticas activas.")
+    show_rows(alerts_all, "No se generaron alertas técnicas con las reglas automáticas activas.")
 with tabs[2]:
-    show_rows(conforms, "No se generaron comprobaciones trazables con las reglas automáticas activas.")
+    show_rows(checks_all, "No se generaron comprobaciones trazables con las reglas automáticas activas.")
 
-# Informe: las observaciones y alertas se incorporan al PDF; las comprobaciones
-# quedan en un anexo de trazabilidad.
-all_report = confirmed + arithmetic_report + alerts + conforms
+# Exportación e informe desde la misma fuente única.
+all_report = confirmed_all + alerts_all + checks_all
 if all_report:
     df_all = pd.DataFrame(all_report)
     st.divider()
@@ -972,7 +982,7 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe de Observaciones 1.9.8 (PDF)",
+        "📄 Generar Informe de Observaciones 1.9.9 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
