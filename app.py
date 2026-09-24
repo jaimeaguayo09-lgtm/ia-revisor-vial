@@ -12,7 +12,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.7")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.1")
 st.caption("Revisión técnica 1.7: separa cumplimiento normativo, alertas técnicas de comportamiento anómalo y observaciones confirmadas.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
