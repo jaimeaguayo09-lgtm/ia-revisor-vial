@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.4.1")
-st.caption("Revisión técnica 1.4.1: corrección del parser de escenarios y trazabilidad estricta Base → Proyecto → Mitigado.")
+st.title("🛣️ IA Revisor Vial — Versión 1.4.2")
+st.caption("Revisión técnica 1.4.2: corrección del contrato del parser y trazabilidad Base → Proyecto → Mitigado.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -464,7 +464,10 @@ def _strict_scenario_tables(pages):
     out["BASE"] = base
     out["PROYECTO"] = proj
     out["MITIGADO"] = mit
-    return out
+
+    # Mantener el mismo contrato de _scenario_tables(): (escenarios, comparativas).
+    comparisons = raw_result[1] if isinstance(raw_result, tuple) and len(raw_result) > 1 else {}
+    return out, comparisons
 
 def build_arc_sheet(pages):
     scenarios, _ = _strict_scenario_tables(pages)
