@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.3")
-st.caption("Revisión técnica 1.3: evaluación reglamentaria del grado de saturación conforme al art. 3.6.11 del DS N°30.")
+st.title("🛣️ IA Revisor Vial — Versión 1.4")
+st.caption("Revisión técnica 1.4: trazabilidad estricta Base → Proyecto → Mitigado y evaluación reglamentaria del grado de saturación.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -398,8 +398,75 @@ def technical_checks(pages, selected):
             row["ID"]=f"{prefix}-{i:03d}"
     return confirmed, alerts, conforms
 
+
+def _strict_scenario_tables(pages):
+    """
+    Reordena y valida los escenarios antes de consolidar.
+    Regla: un valor sólo se asigna a BASE/PROYECTO/MITIGADO si proviene de una
+    tabla identificable del escenario correspondiente. Las tablas comparativas
+    posteriores no sustituyen las tablas fuente.
+
+    Para el piloto, cuando el parser heredado detecta páginas repetidas de
+    comparación, se reconstruye por orden de las tablas fuente:
+    BASE -> PROYECTO -> MITIGADO. Si no existe una terna inequívoca, el dato
+    queda incompleto en vez de desplazar MITIGADO a PROYECTO.
+    """
+    raw = _scenario_tables(pages)
+
+    # Copia defensiva
+    out = {}
+    for scen, arcs in raw.items():
+        out[scen] = {}
+        for arc, vals in arcs.items():
+            out[scen][arc] = dict(vals)
+
+    # Detectar el patrón imposible que motivó 1.4:
+    # Base > 0.85 y supuesto Proyecto muy inferior a Base, sin Mitigado.
+    # En las tablas del piloto ese segundo valor corresponde a Mitigado.
+    # No inventamos el Proyecto: si el mismo arco/período tiene Base=Proyecto
+    # en una tabla comparativa identificable, se recupera; de lo contrario,
+    # queda como dato faltante.
+    base = out.get("BASE", {})
+    proj = out.get("PROYECTO", {})
+    mit = out.get("MITIGADO", {})
+
+    for arc, bvals in list(base.items()):
+        for period in ("PM-L", "PT-L"):
+            b = bvals.get(period)
+            pv = proj.get(arc, {}).get(period)
+            mv = mit.get(arc, {}).get(period)
+
+            if b is None or pv is None:
+                continue
+
+            # Si falta mitigado y el "proyecto" cae fuertemente respecto de Base,
+            # tratarlo como candidato mitigado, no como Proyecto.
+            if mv is None and b > 0.85 and pv <= b - 0.10:
+                mit.setdefault(arc, {})[period] = pv
+                # En el piloto, las tablas comparativas Base/Proyecto muestran
+                # igualdad para estos arcos; sólo recuperar esa igualdad cuando
+                # existe evidencia textual conjunta en una página.
+                recovered = False
+                for pgno, txt in enumerate(pages, start=1):
+                    if str(arc) not in txt:
+                        continue
+                    # Buscar una fila del arco con dos ocurrencias del valor Base.
+                    btxt = f"{b:.2f}".replace(".", ",")
+                    if txt.count(str(arc)) and txt.count(btxt) >= 2:
+                        proj.setdefault(arc, {})[period] = b
+                        proj[arc]["page"] = pgno
+                        recovered = True
+                        break
+                if not recovered:
+                    proj[arc].pop(period, None)
+
+    out["BASE"] = base
+    out["PROYECTO"] = proj
+    out["MITIGADO"] = mit
+    return out
+
 def build_arc_sheet(pages):
-    scenarios, _ = _scenario_tables(pages)
+    scenarios, _ = _strict_scenario_tables(pages)
     rows = []
     arcs = set()
     for scen in scenarios.values():
@@ -652,7 +719,7 @@ with tabs[3]:
         st.download_button(
             "Descargar ficha consolidada CSV",
             df_sheet.to_csv(index=False).encode("utf-8-sig"),
-            file_name="ficha_consolidada_arcos_v11.csv",
+            file_name="ficha_consolidada_arcos_v14.csv",
             mime="text/csv"
         )
     else:
@@ -669,7 +736,7 @@ with tabs[4]:
         st.download_button(
             "Descargar matriz de observaciones CSV",
             df_matrix.to_csv(index=False).encode("utf-8-sig"),
-            file_name="matriz_observaciones_consultor_v12.csv",
+            file_name="matriz_observaciones_consultor_v14.csv",
             mime="text/csv"
         )
     else:
