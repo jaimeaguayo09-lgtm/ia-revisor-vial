@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.7")
-st.caption("Revisión técnica 1.9.2: reconstrucción robusta de Cuadros 9.12 a 9.15 sin depender de saltos de línea del PDF.")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.3")
+st.caption("Revisión técnica 1.9.3: integra observaciones aritméticas y lectura segura de tiempos de viaje y combustible.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -715,79 +715,75 @@ def _extract_three_rows(block):
 
 def deterministic_arithmetic_checks(pages):
     """
-    Recalcula totales visibles de los Cuadros 9.12 a 9.15.
-    Sólo genera OBSERVACIÓN CONFIRMADA cuando la igualdad aritmética no cierra.
+    Recalcula Cuadros 9.12–9.15 usando patrones específicos de la estructura
+    documental observada. No usa costos monetarios en las operaciones.
     """
     results=[]
     full="\n".join(p["text"] for p in pages)
 
-    # Tabla, materia, tipo: tiempo (PM+PT=Total) o combustible.
-    specs=[
-        ("9.12","Tiempo de viaje transporte privado","time"),
-        ("9.13","Tiempo de viaje transporte público","time"),
-        ("9.14","Consumo combustible transporte privado","fuel"),
-        ("9.15","Consumo combustible transporte público","fuel"),
-    ]
-    for table_no,matter,kind in specs:
-        block=_table_block(full,table_no)
-        if not block:
-            continue
-
-        # Página real detectada por aparición del número de cuadro.
-        page="—"
+    def page_for(table_no):
         for pg in pages:
             if re.search(rf"Cuadro\s+N?[°º]?\s*{re.escape(table_no)}\s*:", pg["text"], re.I):
-                page=pg["page"]; break
+                return pg["page"]
+        return "—"
 
-        pm, pt, total = _extract_three_rows(block)
+    def block(table_no):
+        return _table_block(full, table_no)
 
-        if kind=="time":
-            if len(pm)>=1 and len(pt)>=1 and len(total)>=1:
-                calc=pm[0]+pt[0]
-                informed=total[0]
-                ok=abs(calc-informed)<0.001
-                results.append({
-                    "ID":f"AR-{table_no}",
-                    "Página":page,
-                    "Fuente":f"Cuadro {table_no}",
-                    "Materia":matter,
-                    "Comprobación":f"{pm[0]:g} + {pt[0]:g} = {calc:g}",
-                    "Total informado":f"{informed:g}",
-                    "Diferencia":f"{informed-calc:+g}",
-                    "Clasificación":"COMPROBACIÓN CORRECTA" if ok else "OBSERVACIÓN CONFIRMADA",
-                    "Observación":(
-                        "La suma de los períodos coincide con el total informado."
-                        if ok else
-                        f"El total informado ({informed:g}) no coincide con la suma PM-L + PT-L ({calc:g})."
-                    )
-                })
-        else:
-            # Esperado: Marcha, Ralentí, Total [y luego costo].
-            if len(pm)>=3 and len(pt)>=3 and len(total)>=3:
-                checks=[
-                    ("PM-L: Marcha + Ralentí = Total",pm[0]+pm[1],pm[2]),
-                    ("PT-L: Marcha + Ralentí = Total",pt[0]+pt[1],pt[2]),
-                    ("Total Marcha: PM-L + PT-L",pm[0]+pt[0],total[0]),
-                    ("Total Ralentí: PM-L + PT-L",pm[1]+pt[1],total[1]),
-                    ("Total general: PM-L + PT-L",pm[2]+pt[2],total[2]),
-                ]
-                for j,(label,calc,informed) in enumerate(checks,1):
-                    ok=abs(calc-informed)<0.001
-                    results.append({
-                        "ID":f"AR-{table_no}-{j}",
-                        "Página":page,
-                        "Fuente":f"Cuadro {table_no}",
-                        "Materia":matter,
-                        "Comprobación":f"{label}: calculado {calc:g}",
-                        "Total informado":f"{informed:g}",
-                        "Diferencia":f"{informed-calc:+g}",
-                        "Clasificación":"COMPROBACIÓN CORRECTA" if ok else "OBSERVACIÓN CONFIRMADA",
-                        "Observación":(
-                            "La operación aritmética coincide con el valor informado."
-                            if ok else
-                            f"El valor informado ({informed:g}) no coincide con el valor recalculado ({calc:g})."
-                        )
-                    })
+    def vals_time(b):
+        flat=_norm_tokens(b)
+        m=re.search(
+            r"PM-L\s+(\d+(?:[.,]\d+)?)\s+\$\s*[\d.]+\s+"
+            r"PT-L\s+(\d+(?:[.,]\d+)?)\s+\$\s*[\d.]+\s+"
+            r"Total\s+(\d+(?:[.,]\d+)?)\s+\$",
+            flat,re.I)
+        return tuple(float(x.replace(",",".")) for x in m.groups()) if m else None
+
+    def vals_fuel(b):
+        flat=_norm_tokens(b)
+        m=re.search(
+            r"PM-L\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+\$\s*[\d.]+\s+"
+            r"PT-L\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+\$\s*[\d.]+\s+"
+            r"Total\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+\$",
+            flat,re.I)
+        return tuple(float(x.replace(",",".")) for x in m.groups()) if m else None
+
+    for no,matter in [("9.12","Tiempo de viaje transporte privado"),
+                      ("9.13","Tiempo de viaje transporte público")]:
+        v=vals_time(block(no))
+        if not v: continue
+        pm,pt,tot=v; calc=pm+pt; ok=abs(calc-tot)<0.001
+        results.append({
+            "ID":f"AR-{no}","Página":page_for(no),"Fuente":f"Cuadro {no}",
+            "Materia":matter,"Comprobación":f"{pm:g} + {pt:g} = {calc:g}",
+            "Total informado":f"{tot:g}","Diferencia":f"{tot-calc:+g}",
+            "Clasificación":"COMPROBACIÓN CORRECTA" if ok else "OBSERVACIÓN CONFIRMADA",
+            "Observación":"La suma de los períodos coincide con el total informado." if ok
+                else f"El total informado ({tot:g}) no coincide con la suma PM-L + PT-L ({calc:g})."
+        })
+
+    for no,matter in [("9.14","Consumo combustible transporte privado"),
+                      ("9.15","Consumo combustible transporte público")]:
+        v=vals_fuel(block(no))
+        if not v: continue
+        pm_m,pm_r,pm_t,pt_m,pt_r,pt_t,t_m,t_r,t_t=v
+        checks=[
+            ("PM-L: Marcha + Ralentí = Total",pm_m+pm_r,pm_t),
+            ("PT-L: Marcha + Ralentí = Total",pt_m+pt_r,pt_t),
+            ("Total Marcha: PM-L + PT-L",pm_m+pt_m,t_m),
+            ("Total Ralentí: PM-L + PT-L",pm_r+pt_r,t_r),
+            ("Total general: PM-L + PT-L",pm_t+pt_t,t_t),
+        ]
+        for j,(label,calc,inf) in enumerate(checks,1):
+            ok=abs(calc-inf)<0.001
+            results.append({
+                "ID":f"AR-{no}-{j}","Página":page_for(no),"Fuente":f"Cuadro {no}",
+                "Materia":matter,"Comprobación":f"{label}: calculado {calc:g}",
+                "Total informado":f"{inf:g}","Diferencia":f"{inf-calc:+g}",
+                "Clasificación":"COMPROBACIÓN CORRECTA" if ok else "OBSERVACIÓN CONFIRMADA",
+                "Observación":"La operación aritmética coincide con el valor informado." if ok
+                    else f"El valor informado ({inf:g}) no coincide con el valor recalculado ({calc:g})."
+            })
     return results
 
 def analyze(pages, selected):
@@ -949,7 +945,7 @@ with tabs[4]:
         st.success("No se detectaron aumentos del GS entre Proyecto y Mitigado.")
 
 with tabs[5]:
-    arithmetic = deterministic_arithmetic_checks(pages)
+    arithmetic = arithmetic_results
     st.caption("Recalculo determinístico de totales. Una diferencia aritmética se clasifica como observación confirmada; no depende de interpretación normativa.")
     if arithmetic:
         df_arith = pd.DataFrame(arithmetic)
@@ -959,7 +955,7 @@ with tabs[5]:
         st.download_button(
             "Descargar comprobación aritmética CSV",
             df_arith.to_csv(index=False).encode("utf-8-sig"),
-            file_name="comprobacion_aritmetica_v19_2.csv",
+            file_name="comprobacion_aritmetica_v19_3.csv",
             mime="text/csv"
         )
     else:
