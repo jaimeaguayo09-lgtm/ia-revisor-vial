@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.1")
-st.caption("Revisión técnica 1.7: separa cumplimiento normativo, alertas técnicas de comportamiento anómalo y observaciones confirmadas.")
+st.title("🛣️ IA Revisor Vial — Versión 1.7")
+st.caption("Revisión técnica 1.9.2: reconstrucción robusta de Cuadros 9.12 a 9.15 sin depender de saltos de línea del PDF.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -656,23 +656,62 @@ def _table_block(text, table_no):
     m = pat.search(text)
     return m.group(1) if m else ""
 
-def _numbers_after_label(block, label):
+def _norm_tokens(block):
+    # Normaliza espacios/saltos de línea, conservando el orden de lectura del PDF.
+    return re.sub(r"\s+", " ", block).strip()
+
+def _row_values_between_labels(block, label, next_labels):
     """
-    Lee exclusivamente la fila cuyo primer campo coincide con label.
-    Evita que 'Total' haga match con la palabra Total contenida en PM-L/PT-L
-    o en encabezados internos.
+    Extrae números después de una etiqueta de fila y antes de la siguiente
+    etiqueta conocida. No depende de que la fila empiece en una línea física.
+    Si no puede delimitar inequívocamente, devuelve [].
     """
-    pattern = rf"(?mi)^[ \t]*{re.escape(label)}[ \t]+([^\n\r]+)$"
-    m = re.search(pattern, block)
-    if not m:
+    flat=_norm_tokens(block)
+    label_pat=rf"(?<![\w-]){re.escape(label)}(?![\w-])"
+    matches=list(re.finditer(label_pat, flat, re.I))
+    if len(matches) != 1:
         return []
+    a=matches[0].end()
+    b=len(flat)
+    for nxt in next_labels:
+        nm=re.search(rf"(?<![\w-]){re.escape(nxt)}(?![\w-])", flat[a:], re.I)
+        if nm:
+            b=min(b, a+nm.start())
+    segment=flat[a:b]
     vals=[]
-    for x in re.findall(r"(?<!\$)\b\d+(?:[.,]\d+)?\b", m.group(1)):
+    for x in re.findall(r"(?<![\w$])\d+(?:[.,]\d+)?", segment):
         try:
             vals.append(float(x.replace(".","").replace(",",".")))
         except Exception:
             pass
     return vals
+
+def _extract_three_rows(block):
+    """
+    Reconstruye PM-L, PT-L y Total por posición relativa de etiquetas.
+    Exige exactamente una aparición de cada etiqueta.
+    """
+    flat=_norm_tokens(block)
+    labels=["PM-L","PT-L","Total"]
+    pos={}
+    for lab in labels:
+        ms=list(re.finditer(rf"(?<![\w-]){re.escape(lab)}(?![\w-])", flat, re.I))
+        if len(ms)!=1:
+            return [],[],[]
+        pos[lab]=ms[0]
+    if not (pos["PM-L"].start() < pos["PT-L"].start() < pos["Total"].start()):
+        return [],[],[]
+    def nums(a,b):
+        seg=flat[a:b]
+        out=[]
+        for x in re.findall(r"(?<![\w$])\d+(?:[.,]\d+)?", seg):
+            try: out.append(float(x.replace(".","").replace(",",".")))
+            except: pass
+        return out
+    pm=nums(pos["PM-L"].end(),pos["PT-L"].start())
+    pt=nums(pos["PT-L"].end(),pos["Total"].start())
+    total=nums(pos["Total"].end(),len(flat))
+    return pm,pt,total
 
 def deterministic_arithmetic_checks(pages):
     """
@@ -700,9 +739,7 @@ def deterministic_arithmetic_checks(pages):
             if re.search(rf"Cuadro\s+N?[°º]?\s*{re.escape(table_no)}\s*:", pg["text"], re.I):
                 page=pg["page"]; break
 
-        pm=_numbers_after_label(block,"PM-L")
-        pt=_numbers_after_label(block,"PT-L")
-        total=_numbers_after_label(block,"Total")
+        pm, pt, total = _extract_three_rows(block)
 
         if kind=="time":
             if len(pm)>=1 and len(pt)>=1 and len(total)>=1:
@@ -922,7 +959,7 @@ with tabs[5]:
         st.download_button(
             "Descargar comprobación aritmética CSV",
             df_arith.to_csv(index=False).encode("utf-8-sig"),
-            file_name="comprobacion_aritmetica_v19_1.csv",
+            file_name="comprobacion_aritmetica_v19_2.csv",
             mime="text/csv"
         )
     else:
