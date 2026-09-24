@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.7")
-st.caption("Revisión técnica 1.9.7: mejora el informe PDF con resumen ejecutivo y separación entre observaciones confirmadas, alertas técnicas y comprobaciones.")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.8")
+st.caption("Revisión técnica 1.9.8: unifica las observaciones confirmadas del motor general y del módulo aritmético en la interfaz y el informe PDF.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -952,6 +952,7 @@ def show_rows(rows, empty_msg):
         st.code(x["Evidencia"])
 
 with tabs[0]:
+    confirmed_ui = confirmed + arithmetic_report
     show_rows(confirmed, "No se demostraron observaciones confirmadas con las reglas automáticas activas.")
 with tabs[1]:
     show_rows(alerts, "No se generaron alertas técnicas con las reglas automáticas activas.")
@@ -971,7 +972,7 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe de Observaciones 1.9.6 (PDF)",
+        "📄 Generar Informe de Observaciones 1.9.8 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )

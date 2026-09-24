@@ -1,9 +1,9 @@
-# IA Revisor Vial — Versión 1.9.7
+# IA Revisor Vial — Versión 1.9.8
 
-Corrección de maquetación del PDF:
+- La pestaña **Observaciones confirmadas** integra el motor general y las observaciones aritméticas.
+- Contador, pestaña y PDF quedan consistentes.
+- El botón/nombre del informe se actualiza a 1.9.8.
+- No se modifica el motor de cálculo ni los parsers ya validados.
 
-- Evita superposición entre ID, páginas, materia y clasificación.
-- Las páginas múltiples se muestran en líneas separadas dentro de su celda.
-- Todas las celdas variables usan Paragraph de ReportLab y admiten salto de línea.
-- Se reajustan los anchos de columnas sin modificar el motor de revisión.
-- Mantiene 3 observaciones confirmadas, 23 alertas y 17 comprobaciones del caso piloto validado.
+Caso piloto esperado: 3 observaciones confirmadas visibles en la pestaña:
+AR-9.13, AR-9.15-4 y AR-9.15-5.
