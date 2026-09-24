@@ -1,8 +1,6 @@
 
-import io
-import re
+import io, re
 from collections import defaultdict
-
 import fitz
 import pandas as pd
 import streamlit as st
@@ -11,299 +9,161 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Prototipo 0.2")
-st.caption("Revisión trazable de estudios viales e IMIV. Cada hallazgo debe poder vincularse con evidencia del documento.")
+st.title("🛣️ IA Revisor Vial — Prototipo 0.3")
+st.caption("Revisión trazable: una observación solo se emite cuando la evidencia automática es suficientemente específica.")
 
-MODULES = [
-    "Antecedentes", "Aforos", "Demanda", "Capacidad y saturación",
-    "Modelación", "Geometría", "Señalización y demarcación",
-    "Consistencia documental", "Medidas de mitigación"
-]
+MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
+           "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
 
-CLASS_ORDER = {
-    "ERROR DE CÁLCULO": 1,
-    "INCONSISTENCIA": 2,
-    "FALTA DE ANTECEDENTES": 3,
-    "REQUIERE REVISIÓN PROFESIONAL": 4,
-    "CONFORME": 5,
-}
-
-def clean_text(s):
-    return re.sub(r"\s+", " ", s or "").strip()
+def clean(s): return re.sub(r"\s+"," ",s or "").strip()
 
 @st.cache_data(show_spinner=False)
 def extract_pdf(data):
-    doc = fitz.open(stream=data, filetype="pdf")
-    pages = []
-    for i, page in enumerate(doc):
-        pages.append({"page": i + 1, "text": clean_text(page.get_text("text"))})
-    return pages
+    d=fitz.open(stream=data,filetype="pdf")
+    return [{"page":i+1,"text":clean(p.get_text("text"))} for i,p in enumerate(d)]
 
-def evidence(text, start, end, radius=160):
-    a = max(0, start-radius)
-    b = min(len(text), end+radius)
-    return clean_text(text[a:b])
+def snippet(txt,a,b,r=130):
+    return clean(txt[max(0,a-r):min(len(txt),b+r)])
 
-def find_quantities(pages):
-    """Context-aware extraction. Vehicle and bicycle parking are different concepts."""
-    patterns = {
-        "Estacionamientos de vehículos": [
-            r"(\d{1,4})\s+(?:estacionamientos?|cupos?)\s+(?:para\s+)?(?:vehículos?|vehiculares?|automóviles?)",
-            r"(?:estacionamientos?|cupos?)\s+(?:vehiculares?|de\s+vehículos?)\D{0,25}(\d{1,4})",
-        ],
-        "Estacionamientos de bicicletas": [
-            r"(\d{1,4})\s+(?:estacionamientos?|cupos?)\s+(?:para\s+)?bicicletas?",
-            r"(?:estacionamientos?|cupos?)\s+(?:de\s+)?bicicletas?\D{0,25}(\d{1,4})",
-            r"bicicleteros?\D{0,25}(\d{1,4})",
-        ],
-        "Estacionamientos PMR": [
-            r"(\d{1,3})\s+(?:estacionamientos?|cupos?)\s+(?:para\s+)?(?:personas\s+con\s+movilidad\s+reducida|pmr)",
-            r"(?:movilidad\s+reducida|pmr)\D{0,25}(\d{1,3})",
-        ],
-    }
-    found = defaultdict(list)
+# v0.3: deliberately narrow, high-confidence quantity rules.
+# A number is accepted only when grammatically attached to the target concept.
+RULES = {
+ "Estacionamientos de vehículos": [
+   r"(?P<n>\d{1,4})\s+(?:unidades?\s+)?(?:de\s+)?estacionamientos?\s+(?:para\s+)?veh[ií]culos?\s+motorizados?",
+   r"(?:dotaci[oó]n\s+de\s+)?estacionamientos?\s+(?:vehiculares|para\s+veh[ií]culos?)\s*(?:de|:|es|corresponde\s+a)?\s*(?P<n>\d{1,4})\b",
+ ],
+ "Estacionamientos de bicicletas": [
+   r"(?P<n>\d{1,4})\s+(?:unidades?\s+)?(?:de\s+)?estacionamientos?\s+(?:para\s+)?bicicletas?\b",
+   r"(?:estacionamientos?|cupos?)\s+(?:para\s+|de\s+)?bicicletas?\s*(?:de|:|es|corresponde\s+a)?\s*(?P<n>\d{1,4})\b",
+   r"bicicleteros?\s*(?:de|:|es|corresponde\s+a)?\s*(?P<n>\d{1,4})\b",
+ ],
+ "Estacionamientos PMR": [
+   r"(?:se\s+consideran|considerando|incluye[n]?|contempla[n]?|corresponden?)\s+(?P<n>\d{1,3})\s+(?:estacionamientos?\s+)?para\s+personas?\s+con\s+movilidad\s+reducida\b",
+   r"(?P<n>\d{1,3})\s+estacionamientos?\s+(?:reservados?\s+)?para\s+personas?\s+con\s+movilidad\s+reducida\b",
+   r"(?:estacionamientos?|cupos?)\s+(?:para\s+)?(?:personas?\s+con\s+movilidad\s+reducida|PMR)\s*(?:de|:|es|corresponde\s+a)?\s*(?P<n>\d{1,3})\b",
+ ],
+}
+
+def extract_concepts(pages):
+    out=defaultdict(list)
     for p in pages:
-        txt = p["text"]
-        for concept, pats in patterns.items():
+        for concept,pats in RULES.items():
             for pat in pats:
-                for m in re.finditer(pat, txt, flags=re.I):
-                    val = int(m.group(1))
-                    found[concept].append({
-                        "value": val, "page": p["page"],
-                        "evidence": evidence(txt, m.start(), m.end())
-                    })
-    return found
+                for m in re.finditer(pat,p["text"],re.I):
+                    n=int(m.group("n"))
+                    ev=snippet(p["text"],m.start(),m.end())
+                    key=(concept,n,p["page"],ev)
+                    if not any((h["concept"],h["value"],h["page"],h["evidence"])==key for h in out[concept]):
+                        out[concept].append({"concept":concept,"value":n,"page":p["page"],"evidence":ev})
+    return out
 
-def add_obs(obs, materia, pages, hallazgo, comprobacion, clasificacion, evidencia="", informado="", recalculado="", accion=""):
-    obs.append({
-        "ID": f"RV-{len(obs)+1:03d}",
-        "Página": pages,
-        "Materia": materia,
-        "Hallazgo": hallazgo,
-        "Evidencia": evidencia,
-        "Valor informado": informado,
-        "Valor recalculado": recalculado,
-        "Comprobación": comprobacion,
-        "Clasificación": clasificacion,
-        "Acción requerida": accion,
-    })
+def obsrow(i,materia,pags,hallazgo,evidencia,comprobacion,clasif,accion):
+    return {"ID":f"RV-{i:03d}","Página":pags,"Materia":materia,"Hallazgo":hallazgo,
+            "Evidencia":evidencia,"Comprobación":comprobacion,
+            "Clasificación":clasif,"Acción requerida":accion}
 
-def check_contextual_consistency(pages, obs):
-    quantities = find_quantities(pages)
-    for concept, hits in quantities.items():
-        vals = sorted(set(x["value"] for x in hits))
-        if len(vals) > 1:
-            pg = ", ".join(map(str, sorted(set(x["page"] for x in hits))))
-            ev = " | ".join(f"Pág. {x['page']}: {x['evidence']}" for x in hits[:4])
-            add_obs(
-                obs, "Consistencia documental", pg,
-                f"Se encontraron valores distintos para el mismo concepto «{concept}»: {vals}.",
-                "Comparación contextual de menciones referidas al mismo concepto.",
-                "INCONSISTENCIA", ev,
-                accion="Verificar cuál es el valor correcto y uniformar el estudio y sus anexos."
-            )
-
-def presence_check(pages, selected, obs):
-    whole = " ".join(p["text"].lower() for p in pages)
-    checks = {
-        "Aforos": ["aforo", "conteo vehicular"],
-        "Demanda": ["demanda", "generación de viajes", "generacion de viajes"],
-        "Capacidad y saturación": ["grado de saturación", "grado de saturacion", "capacidad"],
-        "Modelación": ["modelación", "modelacion", "transyt", "sidra", "vissim", "aimsun"],
-        "Geometría": ["geometría", "geometria", "perfil", "planta"],
-        "Señalización y demarcación": ["señalización", "señalizacion", "demarcación", "demarcacion"],
-        "Medidas de mitigación": ["medidas de mitigación", "medidas de mitigacion", "mitigación", "mitigacion"],
-    }
-    for module, terms in checks.items():
-        if module in selected and not any(t in whole for t in terms):
-            add_obs(
-                obs, module, "—",
-                f"No se identificó automáticamente contenido suficiente asociado al módulo «{module}».",
-                "Búsqueda textual preliminar en el documento.",
-                "FALTA DE ANTECEDENTES",
-                accion="Revisar si el antecedente se encuentra en anexos, planos o documentos no extraíbles como texto."
-            )
-
-def saturation_checks(pages, obs):
-    # Conservative: only calculate when q, c and q/c are in a short textual neighborhood.
-    num = r"([0-9]+(?:[.,][0-9]+)?)"
-    qpat = re.compile(r"(?:flujo|q)\s*[:=]\s*" + num, re.I)
-    cpat = re.compile(r"(?:capacidad|c)\s*[:=]\s*" + num, re.I)
-    spat = re.compile(r"(?:q\s*/\s*c|grado\s+de\s+saturaci[oó]n|x)\s*[:=]\s*" + num, re.I)
-    for p in pages:
-        txt = p["text"]
-        # Search chunks so unrelated values on a page are not mixed.
-        for start in range(0, len(txt), 900):
-            chunk = txt[start:start+1200]
-            qm, cm, sm = qpat.search(chunk), cpat.search(chunk), spat.search(chunk)
-            if qm and cm and sm:
-                q = float(qm.group(1).replace(",", "."))
-                c = float(cm.group(1).replace(",", "."))
-                informed = float(sm.group(1).replace(",", "."))
-                if c > 0:
-                    calc = q/c
-                    if abs(calc-informed) > 0.02:
-                        add_obs(
-                            obs, "Capacidad y saturación", str(p["page"]),
-                            "El grado de saturación informado no coincide con el cociente q/c identificado en el mismo contexto.",
-                            f"Recalculo determinístico: q/c = {q:g}/{c:g} = {calc:.3f}.",
-                            "ERROR DE CÁLCULO",
-                            evidence(txt, start, min(len(txt), start+1200), 0),
-                            f"{informed:.3f}", f"{calc:.3f}",
-                            "Revisar el cálculo y los resultados que dependan de este parámetro."
-                        )
-
-def analyze(pages, selected):
-    obs = []
+def analyze(pages,selected):
+    obs=[]
     if "Consistencia documental" in selected:
-        check_contextual_consistency(pages, obs)
-    presence_check(pages, selected, obs)
-    if "Capacidad y saturación" in selected:
-        saturation_checks(pages, obs)
-    obs.sort(key=lambda x: (CLASS_ORDER.get(x["Clasificación"], 99), x["ID"]))
-    # Renumber after sort
-    for i, row in enumerate(obs, 1):
-        row["ID"] = f"RV-{i:03d}"
+        concepts=extract_concepts(pages)
+        for concept,hits in concepts.items():
+            vals=sorted(set(h["value"] for h in hits))
+            # High-confidence gate: require at least 2 explicit, independent statements
+            # and show evidence for every competing value.
+            byval=defaultdict(list)
+            for h in hits: byval[h["value"]].append(h)
+            if len(vals)>1 and all(byval[v] for v in vals):
+                evidence=[]
+                pageset=set()
+                for v in vals:
+                    h=byval[v][0]
+                    pageset.add(h["page"])
+                    evidence.append(f"Valor {v} — pág. {h['page']}: {h['evidence']}")
+                obs.append(obsrow(
+                    len(obs)+1,"Consistencia documental",
+                    ", ".join(map(str,sorted(pageset))),
+                    f"Se identificaron declaraciones explícitas con valores distintos para «{concept}»: {vals}.",
+                    "\n\n".join(evidence),
+                    "Comparación entre expresiones explícitas del mismo concepto. Se muestra evidencia independiente para cada valor.",
+                    "INCONSISTENCIA",
+                    "Verificar el valor correcto y uniformar el documento y sus anexos."
+                ))
     return obs
 
-def make_pdf(project, source_name, n_pages, observations):
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4, rightMargin=1.6*cm, leftMargin=1.6*cm,
-        topMargin=1.6*cm, bottomMargin=1.6*cm
-    )
-    styles = getSampleStyleSheet()
-    title = ParagraphStyle("title2", parent=styles["Title"], alignment=TA_CENTER, fontSize=16, leading=20)
-    small = ParagraphStyle("small", parent=styles["BodyText"], fontSize=8, leading=10)
-    body = ParagraphStyle("body2", parent=styles["BodyText"], fontSize=9, leading=12)
-    h2 = ParagraphStyle("h2b", parent=styles["Heading2"], fontSize=12, leading=15)
-
-    story = [
-        Paragraph("INFORME DE OBSERVACIONES — REVISIÓN AUTOMATIZADA", title),
-        Spacer(1, 10),
-        Paragraph(f"<b>Proyecto:</b> {project}", body),
-        Paragraph(f"<b>Documento revisado:</b> {source_name}", body),
-        Paragraph(f"<b>Extensión:</b> {n_pages} páginas", body),
-        Paragraph("<b>Alcance:</b> revisión automatizada preliminar. Las conclusiones normativas requieren fuente técnica verificable y revisión profesional cuando corresponda.", body),
-        Spacer(1, 12),
-        Paragraph("Resumen ejecutivo", h2),
-    ]
-
-    if observations:
-        counts = pd.Series([x["Clasificación"] for x in observations]).value_counts()
-        summary = [["Clasificación", "Cantidad"]] + [[k, str(v)] for k, v in counts.items()]
-        t = Table(summary, colWidths=[11*cm, 3*cm])
-        t.setStyle(TableStyle([
-            ("GRID", (0,0), (-1,-1), .4, colors.grey),
-            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("FONTSIZE", (0,0), (-1,-1), 8),
-            ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ]))
-        story += [t, Spacer(1, 14), Paragraph("Matriz de observaciones", h2)]
-        rows = [["ID", "Pág.", "Materia", "Clasificación", "Observación"]]
-        for x in observations:
-            rows.append([
-                x["ID"], str(x["Página"]),
-                Paragraph(x["Materia"], small),
-                Paragraph(x["Clasificación"], small),
-                Paragraph(x["Hallazgo"], small),
-            ])
-        mt = Table(rows, colWidths=[1.2*cm, 1.4*cm, 3.2*cm, 3.2*cm, 8.2*cm], repeatRows=1)
-        mt.setStyle(TableStyle([
-            ("GRID", (0,0), (-1,-1), .3, colors.grey),
-            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("FONTSIZE", (0,0), (-1,-1), 7),
-            ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ]))
-        story += [mt, PageBreak(), Paragraph("Detalle de observaciones", h2)]
-        for x in observations:
-            story += [
-                Paragraph(f"{x['ID']} — {x['Materia']}", styles["Heading3"]),
-                Paragraph(f"<b>Página(s):</b> {x['Página']}", body),
-                Paragraph(f"<b>Clasificación:</b> {x['Clasificación']}", body),
-                Paragraph(f"<b>Observación:</b> {x['Hallazgo']}", body),
-            ]
-            if x["Evidencia"]:
-                story.append(Paragraph(f"<b>Evidencia:</b> {x['Evidencia']}", body))
-            if x["Valor informado"]:
-                story.append(Paragraph(f"<b>Valor informado:</b> {x['Valor informado']}", body))
-            if x["Valor recalculado"]:
-                story.append(Paragraph(f"<b>Valor recalculado:</b> {x['Valor recalculado']}", body))
-            story += [
-                Paragraph(f"<b>Comprobación:</b> {x['Comprobación']}", body),
-                Paragraph(f"<b>Acción requerida:</b> {x['Acción requerida'] or 'Revisar técnicamente el antecedente.'}", body),
-                Spacer(1, 12),
-            ]
+def make_pdf(project,source,n_pages,obs):
+    b=io.BytesIO()
+    doc=SimpleDocTemplate(b,pagesize=A4,rightMargin=1.5*cm,leftMargin=1.5*cm,topMargin=1.5*cm,bottomMargin=1.5*cm)
+    ss=getSampleStyleSheet()
+    title=ParagraphStyle("t",parent=ss["Title"],alignment=TA_CENTER,fontSize=15,leading=18)
+    body=ParagraphStyle("b",parent=ss["BodyText"],fontSize=9,leading=12)
+    small=ParagraphStyle("s",parent=ss["BodyText"],fontSize=7,leading=9)
+    story=[Paragraph("INFORME DE OBSERVACIONES — REVISIÓN AUTOMATIZADA",title),Spacer(1,10),
+           Paragraph(f"<b>Proyecto:</b> {project}",body),
+           Paragraph(f"<b>Documento:</b> {source}",body),
+           Paragraph(f"<b>Páginas:</b> {n_pages}",body),
+           Paragraph("<b>Alcance:</b> hallazgos automáticos con evidencia textual. La ausencia de observaciones no equivale a aprobación técnica integral.",body),
+           Spacer(1,12)]
+    if not obs:
+        story.append(Paragraph("No se generaron observaciones automáticas con el umbral de evidencia de esta versión.",body))
     else:
-        story.append(Paragraph("No se generaron observaciones automáticas con las reglas activas. Esto no equivale a una aprobación técnica integral del estudio.", body))
-
-    doc.build(story)
-    return buf.getvalue()
+        rows=[["ID","Pág.","Materia","Clasificación","Observación"]]
+        for x in obs:
+            rows.append([x["ID"],x["Página"],Paragraph(x["Materia"],small),Paragraph(x["Clasificación"],small),Paragraph(x["Hallazgo"],small)])
+        t=Table(rows,colWidths=[1.1*cm,1.3*cm,3.1*cm,3*cm,8.5*cm],repeatRows=1)
+        t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.3,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
+                               ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("VALIGN",(0,0),(-1,-1),"TOP")]))
+        story += [Paragraph("Matriz de observaciones",ss["Heading2"]),t,PageBreak(),Paragraph("Detalle",ss["Heading2"])]
+        for x in obs:
+            ev=x["Evidencia"].replace("\n\n","<br/><br/>")
+            story += [Paragraph(f"{x['ID']} — {x['Materia']}",ss["Heading3"]),
+                      Paragraph(f"<b>Página(s):</b> {x['Página']}",body),
+                      Paragraph(f"<b>Clasificación:</b> {x['Clasificación']}",body),
+                      Paragraph(f"<b>Observación:</b> {x['Hallazgo']}",body),
+                      Paragraph(f"<b>Evidencia:</b> {ev}",body),
+                      Paragraph(f"<b>Comprobación:</b> {x['Comprobación']}",body),
+                      Paragraph(f"<b>Acción requerida:</b> {x['Acción requerida']}",body),Spacer(1,12)]
+    doc.build(story); return b.getvalue()
 
 with st.sidebar:
     st.header("Caso")
-    project = st.text_input("Nombre", "Caso Piloto 001")
-    uploaded = st.file_uploader("Estudio PDF", type=["pdf"])
+    project=st.text_input("Nombre","Caso Piloto 001")
+    up=st.file_uploader("Estudio PDF",type=["pdf"])
     st.header("Módulos")
-    selected = [m for m in MODULES if st.checkbox(m, value=True, key=m)]
-    st.info("El sistema no declara incumplimientos normativos sin una biblioteca técnica verificable.")
+    selected=[m for m in MODULES if st.checkbox(m,True,key=m)]
+    st.info("Regla 0.3: si no existe evidencia suficiente para demostrar un hallazgo, no se formula como observación.")
 
-if not uploaded:
-    st.info("Carga un estudio en PDF para comenzar.")
-    st.stop()
+if not up:
+    st.info("Carga un estudio en PDF para comenzar."); st.stop()
 
-data = uploaded.getvalue()
-with st.spinner("Extrayendo texto del estudio..."):
-    pages = extract_pdf(data)
-
+pages=extract_pdf(up.getvalue())
 st.success(f"Documento cargado: {len(pages)} páginas")
-c1, c2, c3 = st.columns(3)
-c1.metric("Páginas", len(pages))
-c2.metric("Módulos seleccionados", len(selected))
-c3.metric("Proyecto", project)
+a,b,c=st.columns(3); a.metric("Páginas",len(pages)); b.metric("Módulos seleccionados",len(selected)); c.metric("Proyecto",project)
 
-if st.button("Analizar estudio", type="primary"):
-    with st.spinner("Ejecutando comprobaciones..."):
-        st.session_state["obs"] = analyze(pages, selected)
+if st.button("Analizar estudio",type="primary"):
+    st.session_state["obs03"]=analyze(pages,selected)
 
-observations = st.session_state.get("obs", [])
+obs=st.session_state.get("obs03",[])
 st.subheader("Matriz de observaciones")
-
-if observations:
-    df = pd.DataFrame(observations)
-    display_cols = ["ID", "Página", "Materia", "Hallazgo", "Comprobación", "Clasificación"]
-    st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
-
-    csv = df.to_csv(index=False).encode("utf-8-sig")
-    pdf = make_pdf(project, uploaded.name, len(pages), observations)
-
-    b1, b2 = st.columns(2)
-    b1.download_button("Exportar CSV", csv, file_name="observaciones_revisor_vial.csv", mime="text/csv")
-    b2.download_button(
-        "📄 Generar Informe de Observaciones (PDF)",
-        pdf,
-        file_name="informe_observaciones_revisor_vial.pdf",
-        mime="application/pdf"
-    )
-
+if obs:
+    df=pd.DataFrame(obs)
+    st.dataframe(df[["ID","Página","Materia","Hallazgo","Comprobación","Clasificación"]],use_container_width=True,hide_index=True)
+    c1,c2=st.columns(2)
+    c1.download_button("Exportar CSV",df.to_csv(index=False).encode("utf-8-sig"),"observaciones_revisor_vial.csv","text/csv")
+    c2.download_button("📄 Generar Informe de Observaciones (PDF)",make_pdf(project,up.name,len(pages),obs),
+                       "informe_observaciones_revisor_vial.pdf","application/pdf")
     st.subheader("Auditor")
-    ids = [x["ID"] for x in observations]
-    chosen = st.selectbox("Observación", ids)
-    x = next(o for o in observations if o["ID"] == chosen)
+    chosen=st.selectbox("Observación",[x["ID"] for x in obs])
+    x=next(y for y in obs if y["ID"]==chosen)
     st.markdown(f"**Hallazgo:** {x['Hallazgo']}")
     st.markdown(f"**Página(s):** {x['Página']}")
     st.markdown(f"**Clasificación:** {x['Clasificación']}")
-    if x["Evidencia"]:
-        st.markdown("**Evidencia extraída:**")
-        st.code(x["Evidencia"])
+    st.markdown("**Evidencia utilizada para sostener la observación:**")
+    st.code(x["Evidencia"])
     st.markdown(f"**Comprobación:** {x['Comprobación']}")
     st.markdown(f"**Acción requerida:** {x['Acción requerida']}")
 else:
-    st.caption("Pulsa «Analizar estudio» para generar la matriz. Si no se generan observaciones, ello no equivale a aprobación técnica integral.")
+    st.success("No se generaron observaciones automáticas con el umbral de evidencia actual.")
+    st.caption("Esto no significa que el estudio esté aprobado: solo que las reglas automáticas activas no demostraron una inconsistencia con evidencia suficiente.")
