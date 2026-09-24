@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.3")
-st.caption("Revisión técnica 1.9.3: integra observaciones aritméticas y lectura segura de tiempos de viaje y combustible.")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.4")
+st.caption("Revisión técnica 1.9.4: corrige el alcance de variables del módulo aritmético y mantiene la lectura segura de los Cuadros 9.12 a 9.15.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -945,7 +945,7 @@ with tabs[4]:
         st.success("No se detectaron aumentos del GS entre Proyecto y Mitigado.")
 
 with tabs[5]:
-    arithmetic = arithmetic_results
+    arithmetic = deterministic_arithmetic_checks(pages)
     st.caption("Recalculo determinístico de totales. Una diferencia aritmética se clasifica como observación confirmada; no depende de interpretación normativa.")
     if arithmetic:
         df_arith = pd.DataFrame(arithmetic)
@@ -955,7 +955,7 @@ with tabs[5]:
         st.download_button(
             "Descargar comprobación aritmética CSV",
             df_arith.to_csv(index=False).encode("utf-8-sig"),
-            file_name="comprobacion_aritmetica_v19_3.csv",
+            file_name="comprobacion_aritmetica_v19_4.csv",
             mime="text/csv"
         )
     else:

@@ -1,19 +1,15 @@
-# IA Revisor Vial — Versión 1.9.3
+# IA Revisor Vial — Versión 1.9.4
 
-- Corrige el encabezado visible a 1.9.3.
-- Integra errores aritméticos confirmados al contador superior.
-- Usa patrones específicos y seguros para los Cuadros 9.12–9.15.
-- Excluye los costos monetarios del recálculo.
-- No modifica el extractor de grados de saturación.
+Corrección puntual del NameError observado en Streamlit 1.9.3.
 
-Control esperado:
-9.12 correcto.
-9.13: 11+10=21 versus 20 -> 1 error.
-9.14: todas las sumas correctas.
-9.15:
-  PM-L 18+17=35 correcto.
-  PT-L 17+15=32 correcto.
-  Total Marcha 18+17=35 correcto.
-  Total Ralentí 17+15=32 versus 31 -> error.
-  Total general 35+32=67 versus 66 -> error.
-Total esperado de observaciones aritméticas confirmadas: 3.
+- La pestaña Comprobación aritmética calcula sus resultados en su propio alcance.
+- El contador superior usa un resumen aritmético definido antes de las métricas.
+- Se mantiene sin cambios el parser específico de Cuadros 9.12–9.15.
+- Se mantiene sin cambios el módulo validado de grados de saturación.
+
+Control esperado del piloto:
+- Observaciones confirmadas: 3.
+- Cuadro 9.12: correcto.
+- Cuadro 9.13: 1 error.
+- Cuadro 9.14: 0 errores.
+- Cuadro 9.15: 2 errores.
