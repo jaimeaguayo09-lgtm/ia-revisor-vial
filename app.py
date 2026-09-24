@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 2.0")
-st.caption("Revisión técnica 2.0: ejecuta automáticamente el motor técnico al cargar o cambiar el PDF y mantiene sincronizadas observaciones, alertas y comprobaciones.")
+st.title("🛣️ IA Revisor Vial — Versión 2.1")
+st.caption("Revisión técnica 2.1: consolida el motor técnico y genera un informe PDF estructurado para revisión y remisión al consultor.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -790,79 +790,104 @@ def analyze(pages, selected):
     return technical_checks(pages, selected)
 
 def make_pdf(project,source,n_pages,obs):
+    """Informe técnico 2.1: salida legible, trazable y separada por naturaleza del hallazgo."""
     b=io.BytesIO()
-    doc=SimpleDocTemplate(b,pagesize=A4,rightMargin=1.5*cm,leftMargin=1.5*cm,topMargin=1.5*cm,bottomMargin=1.5*cm)
+    doc=SimpleDocTemplate(
+        b,pagesize=A4,rightMargin=1.35*cm,leftMargin=1.35*cm,
+        topMargin=1.35*cm,bottomMargin=1.35*cm,
+        title=f"Informe técnico de revisión vial - {project}"
+    )
     ss=getSampleStyleSheet()
-    title=ParagraphStyle("t",parent=ss["Title"],alignment=TA_CENTER,fontSize=15,leading=18)
-    body=ParagraphStyle("b",parent=ss["BodyText"],fontSize=9,leading=12)
-    small=ParagraphStyle("s",parent=ss["BodyText"],fontSize=7,leading=9)
-    h2=ParagraphStyle("h2x",parent=ss["Heading2"],fontSize=12,leading=14,spaceBefore=8,spaceAfter=6)
+    title=ParagraphStyle("t21",parent=ss["Title"],alignment=TA_CENTER,fontSize=16,leading=19,spaceAfter=8)
+    subtitle=ParagraphStyle("sub21",parent=ss["BodyText"],alignment=TA_CENTER,fontSize=9,leading=12,textColor=colors.grey)
+    body=ParagraphStyle("b21",parent=ss["BodyText"],fontSize=8.5,leading=11)
+    small=ParagraphStyle("s21",parent=ss["BodyText"],fontSize=6.5,leading=8.2,wordWrap="LTR")
+    cell=ParagraphStyle("c21",parent=small,fontSize=6.2,leading=7.7,wordWrap="LTR")
+    h1=ParagraphStyle("h121",parent=ss["Heading1"],fontSize=13,leading=16,spaceBefore=8,spaceAfter=7)
+    h2=ParagraphStyle("h221",parent=ss["Heading2"],fontSize=11.5,leading=14,spaceBefore=8,spaceAfter=6)
 
     confirmed=[x for x in obs if "OBSERVACIÓN CONFIRMADA" in str(x.get("Clasificación",""))]
     alerts=[x for x in obs if "ALERTA" in str(x.get("Clasificación",""))]
     checks=[x for x in obs if "COMPROBACIÓN" in str(x.get("Clasificación",""))]
 
-    story=[Paragraph("INFORME DE OBSERVACIONES — REVISIÓN AUTOMATIZADA",title),Spacer(1,10),
-           Paragraph(f"<b>Proyecto:</b> {project}",body),
-           Paragraph(f"<b>Documento:</b> {source}",body),
-           Paragraph(f"<b>Páginas del estudio:</b> {n_pages}",body),
-           Paragraph("<b>Alcance:</b> revisión automatizada con evidencia textual y comprobaciones determinísticas. La ausencia de observaciones no equivale a aprobación técnica integral.",body),
-           Spacer(1,12), Paragraph("Resumen ejecutivo",h2)]
-
-    summary=[
-        ["Categoría","Cantidad","Interpretación"],
-        ["Observaciones confirmadas",str(len(confirmed)),Paragraph("Diferencias demostradas mediante evidencia y/o recálculo determinístico.",small)],
-        ["Alertas técnicas",str(len(alerts)),Paragraph("Situaciones que requieren revisión profesional; no equivalen automáticamente a incumplimiento normativo.",small)],
-        ["Comprobaciones",str(len(checks)),Paragraph("Controles numéricos o documentales que resultaron trazables.",small)],
+    story=[
+        Spacer(1,1.1*cm),
+        Paragraph("INFORME TÉCNICO DE REVISIÓN VIAL",title),
+        Paragraph("IA Revisor Vial — Versión 2.1",subtitle),Spacer(1,14),
+        Paragraph(f"<b>Proyecto:</b> {project}",body),
+        Paragraph(f"<b>Documento revisado:</b> {source}",body),
+        Paragraph(f"<b>Extensión:</b> {n_pages} páginas",body),Spacer(1,10),
+        Paragraph("<b>Alcance.</b> Revisión automatizada basada en evidencia extraída del estudio, controles determinísticos y reglas técnicas activas. Una alerta técnica no se califica por sí sola como incumplimiento normativo. La ausencia de observaciones tampoco equivale a una aprobación técnica integral.",body),
+        Spacer(1,16),Paragraph("Resumen ejecutivo",h1)
     ]
-    ts=Table(summary,colWidths=[4.2*cm,2.0*cm,10.2*cm],repeatRows=1)
-    ts.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.3,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-                            ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("VALIGN",(0,0),(-1,-1),"TOP")]))
+    summary=[
+        [Paragraph("<b>Categoría</b>",small),Paragraph("<b>Cantidad</b>",small),Paragraph("<b>Interpretación</b>",small)],
+        [Paragraph("Observaciones confirmadas",small),str(len(confirmed)),Paragraph("Diferencias demostradas mediante evidencia o recálculo determinístico.",small)],
+        [Paragraph("Alertas técnicas",small),str(len(alerts)),Paragraph("Situaciones que requieren revisión profesional; no equivalen automáticamente a incumplimiento normativo.",small)],
+        [Paragraph("Comprobaciones",small),str(len(checks)),Paragraph("Controles numéricos o documentales trazables que no presentan diferencia en la regla comprobada.",small)],
+    ]
+    ts=Table(summary,colWidths=[4.2*cm,2.0*cm,10.4*cm],repeatRows=1)
+    ts.setStyle(TableStyle([
+        ("GRID",(0,0),(-1,-1),.35,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
+        ("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(1,1),(1,-1),"CENTER"),
+        ("LEFTPADDING",(0,0),(-1,-1),4),("RIGHTPADDING",(0,0),(-1,-1),4),
+        ("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)
+    ]))
     story += [ts,Spacer(1,12)]
+    if confirmed:
+        story.append(Paragraph(f"Se identificaron <b>{len(confirmed)} observaciones confirmadas</b> que deben ser corregidas o aclaradas por el consultor. Las alertas técnicas se presentan separadamente para evitar confundir una condición de revisión con un incumplimiento demostrado.",body))
+    else:
+        story.append(Paragraph("No se identificaron observaciones confirmadas con las reglas automáticas activas. Las alertas técnicas, si existen, se mantienen separadas para revisión profesional.",body))
 
-    def section(title_txt, items, intro):
-        story.append(Paragraph(title_txt,h2))
-        story.append(Paragraph(intro,body))
-        story.append(Spacer(1,6))
-        if not items:
-            story.append(Paragraph("No se registraron resultados en esta categoría.",body)); return
-        # Todas las celdas variables se renderizan como Paragraph para permitir
-        # salto de línea dentro de ID, páginas múltiples y textos extensos.
-        cell=ParagraphStyle("cell_pdf_197",parent=small,fontSize=6.6,leading=8.2,wordWrap="LTR")
-        rows=[[Paragraph("<b>ID</b>",cell),Paragraph("<b>Pág.</b>",cell),
-               Paragraph("<b>Materia</b>",cell),Paragraph("<b>Clasificación</b>",cell),
-               Paragraph("<b>Observación</b>",cell)]]
+    def esc(v):
+        return str(v if v not in (None,"") else "—").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","<br/>")
+
+    def obs_table(items):
+        rows=[[Paragraph("<b>ID</b>",cell),Paragraph("<b>Pág.</b>",cell),Paragraph("<b>Materia</b>",cell),
+               Paragraph("<b>Observación</b>",cell),Paragraph("<b>Comprobación / evidencia</b>",cell),Paragraph("<b>Acción requerida</b>",cell)]]
         for x in items:
-            page_txt=str(x.get("Página","—")).replace(", ",",<br/>")
-            rows.append([Paragraph(str(x.get("ID","")),cell),Paragraph(page_txt,cell),
-                         Paragraph(str(x.get("Materia","")),cell),
-                         Paragraph(str(x.get("Clasificación","")),cell),
-                         Paragraph(str(x.get("Hallazgo","")),cell)])
-        # Ancho total 17,0 cm, dentro del ancho útil de A4 (18 cm).
-        # Se reserva más ancho para páginas y observación para evitar superposición.
-        t=Table(rows,colWidths=[1.25*cm,1.75*cm,2.75*cm,3.15*cm,8.10*cm],repeatRows=1)
-        t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.3,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-                               ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("VALIGN",(0,0),(-1,-1),"TOP"),
-                               ("LEFTPADDING",(0,0),(-1,-1),3),("RIGHTPADDING",(0,0),(-1,-1),3)]))
-        story.append(t)
+            ev=x.get("Comprobación","") or x.get("Evidencia","")
+            rows.append([Paragraph(esc(x.get("ID","")),cell),Paragraph(esc(x.get("Página","—")),cell),
+                         Paragraph(esc(x.get("Materia","")),cell),Paragraph(esc(x.get("Hallazgo","")),cell),
+                         Paragraph(esc(ev),cell),Paragraph(esc(x.get("Acción requerida","")),cell)])
+        t=Table(rows,colWidths=[1.25*cm,1.35*cm,2.45*cm,5.25*cm,3.45*cm,3.05*cm],repeatRows=1,hAlign="LEFT")
+        t.setStyle(TableStyle([
+            ("GRID",(0,0),(-1,-1),.3,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
+            ("VALIGN",(0,0),(-1,-1),"TOP"),("LEFTPADDING",(0,0),(-1,-1),3),("RIGHTPADDING",(0,0),(-1,-1),3),
+            ("TOPPADDING",(0,0),(-1,-1),3),("BOTTOMPADDING",(0,0),(-1,-1),3)
+        ]))
+        return t
 
-    section("1. Observaciones confirmadas",confirmed,"Hallazgos demostrados. Estas observaciones se presentan primero para facilitar su remisión y corrección por el consultor.")
-    story.append(PageBreak())
-    section("2. Alertas técnicas",alerts,"Alertas derivadas de la evolución de los indicadores analizados. Requieren revisión profesional y no se califican por sí solas como incumplimiento normativo.")
-    story.append(PageBreak())
-    section("3. Comprobaciones",checks,"Resultados de controles numéricos y documentales utilizados para mantener trazabilidad de la revisión.")
+    story += [PageBreak(),Paragraph("1. Observaciones confirmadas",h1),
+              Paragraph("Hallazgos demostrados mediante evidencia o recálculo determinístico. Se presentan como materias que requieren corrección, aclaración o justificación del consultor.",body),Spacer(1,6)]
+    if confirmed: story.append(obs_table(confirmed))
+    else: story.append(Paragraph("No se registraron observaciones confirmadas.",body))
 
-    story += [PageBreak(),Paragraph("4. Detalle y trazabilidad",h2)]
-    for x in confirmed + alerts + checks:
-        ev=str(x.get("Evidencia","")).replace("\n\n","<br/><br/>")
-        story += [Paragraph(f"{x.get('ID','')} — {x.get('Materia','')}",ss["Heading3"]),
-                  Paragraph(f"<b>Página(s):</b> {x.get('Página','—')}",body),
-                  Paragraph(f"<b>Clasificación:</b> {x.get('Clasificación','')}",body),
-                  Paragraph(f"<b>Observación:</b> {x.get('Hallazgo','')}",body),
-                  Paragraph(f"<b>Evidencia:</b> {ev}",body),
-                  Paragraph(f"<b>Comprobación:</b> {x.get('Comprobación','')}",body),
-                  Paragraph(f"<b>Acción requerida:</b> {x.get('Acción requerida','')}",body),Spacer(1,12)]
-    doc.build(story); return b.getvalue()
+    story += [PageBreak(),Paragraph("2. Alertas técnicas",h1),
+              Paragraph("Condiciones que requieren revisión profesional. Estas alertas no constituyen, por sí solas, un incumplimiento normativo.",body),Spacer(1,6)]
+    if alerts: story.append(obs_table(alerts))
+    else: story.append(Paragraph("No se registraron alertas técnicas.",body))
+
+    story += [PageBreak(),Paragraph("3. Comprobaciones",h1),
+              Paragraph("Controles utilizados para verificar trazabilidad y consistencia. Se incorporan como anexo de respaldo y no como observaciones al consultor.",body),Spacer(1,6)]
+    if checks: story.append(obs_table(checks))
+    else: story.append(Paragraph("No se registraron comprobaciones.",body))
+
+    story += [PageBreak(),Paragraph("4. Trazabilidad de observaciones confirmadas",h1)]
+    if not confirmed:
+        story.append(Paragraph("Sin observaciones confirmadas para detallar.",body))
+    for x in confirmed:
+        story += [Paragraph(f"{esc(x.get('ID',''))} — {esc(x.get('Materia',''))}",h2),
+                  Paragraph(f"<b>Página(s):</b> {esc(x.get('Página','—'))}",body),
+                  Paragraph(f"<b>Hallazgo:</b> {esc(x.get('Hallazgo',''))}",body),
+                  Paragraph(f"<b>Comprobación:</b> {esc(x.get('Comprobación',''))}",body),
+                  Paragraph(f"<b>Evidencia:</b> {esc(x.get('Evidencia',''))}",body),
+                  Paragraph(f"<b>Acción requerida:</b> {esc(x.get('Acción requerida',''))}",body),Spacer(1,10)]
+
+    story += [Spacer(1,8),Paragraph("Nota metodológica",h2),
+              Paragraph("El informe distingue expresamente entre observaciones confirmadas, alertas técnicas y comprobaciones. Sólo se formula un incumplimiento normativo cuando existe una regla aplicable y una fuente normativa suficientemente trazable; en caso contrario, el resultado permanece como alerta o materia de revisión profesional.",body)]
+    doc.build(story)
+    return b.getvalue()
 
 with st.sidebar:
     st.header("Caso")
@@ -989,7 +1014,7 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe de Observaciones 1.9.9 (PDF)",
+        "📄 Generar Informe Técnico 2.1 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )

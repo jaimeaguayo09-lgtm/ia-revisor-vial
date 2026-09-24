@@ -1,4 +1,4 @@
-# IA Revisor Vial — Versión 2.0
+# IA Revisor Vial — Versión 2.1
 
 Corrección de sincronización del motor de análisis:
 - ejecuta automáticamente el análisis técnico al cargar o cambiar el PDF;
