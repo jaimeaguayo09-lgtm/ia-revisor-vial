@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.5")
-st.caption("Revisión técnica 1.5: extractor estructural por encabezado de escenario Base → Proyecto → Mitigado.")
+st.title("🛣️ IA Revisor Vial — Versión 1.6")
+st.caption("Revisión técnica 1.6: extractor basado en títulos de cuadro y contexto documental real del IMIV.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -84,65 +84,67 @@ def _rows_after_header(text, header_pattern):
 
 def _scenario_tables(pages):
     """
-    Extractor 1.5: identifica primero el escenario por el encabezado de la tabla
-    y sólo después extrae Arco / PM-L / PT-L.
+    Extractor 1.6 basado en la estructura real del IMIV.
 
-    Admite las variantes del estudio:
-    - Situación Actual
-    - Situación Base
-    - Situación Proyecto
-    - Situación con Proyecto
-    - Situación Proyecto Mitigado
-    - Situación con Proyecto Mitigado
+    Regla principal:
+    el escenario NO se determina por el rótulo repetido de la columna
+    "Grados de saturación - Situación Proyecto", porque el propio informe usa
+    ese mismo rótulo dentro del Cuadro 9.16 mitigado.
+
+    Se determina por el contexto documental / título de cuadro:
+      Cuadro 8.1  -> BASE
+      Cuadro 9.11 -> PROYECTO
+      Cuadro 9.16 -> MITIGADO
+
+    La continuación de una tabla en la página siguiente conserva el escenario
+    del cuadro iniciado en la página anterior.
     """
-    scenarios = {"ACTUAL": {}, "BASE": {}, "PROYECTO": {}, "MITIGADO": {}}
-    source_pages = {k: set() for k in scenarios}
+    scenarios={"ACTUAL":{}, "BASE":{}, "PROYECTO":{}, "MITIGADO":{}}
+    source_pages={k:set() for k in scenarios}
+    active=None
 
-    header_re = re.compile(
-        r"grados?\s+de\s+saturaci[oó]n\s*[-–:]?\s*"
-        r"situaci[oó]n\s+(?:(?:con)\s+)?"
-        r"(actual|base|proyecto)(?:\s+mitigad[oa])?",
-        re.I
-    )
+    def identify(text):
+        tl=text.lower()
+        # Títulos de cuadro tienen precedencia absoluta.
+        if re.search(r"cuadro\s+n?[°º]?\s*9\.16\b", tl):
+            return "MITIGADO"
+        if re.search(r"cuadro\s+n?[°º]?\s*9\.11\b", tl):
+            return "PROYECTO"
+        if re.search(r"cuadro\s+n?[°º]?\s*8\.1\b", tl):
+            return "BASE"
+        # Contexto explícito, útil para tablas que no tengan número reconocible.
+        if "situación con proyecto mitigado" in tl or "situacion con proyecto mitigado" in tl:
+            return "MITIGADO"
+        if "resultados modelación, situación con proyecto" in tl or "resultados modelacion, situacion con proyecto" in tl:
+            return "PROYECTO"
+        if "resultados modelación, situación base" in tl or "resultados modelacion, situacion base" in tl:
+            return "BASE"
+        return None
 
-    for p in pages:
-        t = p["text"]
-        tl = t.lower()
+    for i,p in enumerate(pages):
+        t=p["text"]
+        detected=identify(t)
+        if detected:
+            active=detected
 
-        # Clasificación del escenario: MITIGADO tiene precedencia explícita.
-        scen = None
-        if re.search(r"situaci[oó]n\s+(?:con\s+)?proyecto\s+mitigad[oa]", tl, re.I):
-            scen = "MITIGADO"
-        elif re.search(r"situaci[oó]n\s+(?:con\s+)?proyecto", tl, re.I) and \
-             re.search(r"grados?\s+de\s+saturaci[oó]n", tl, re.I):
-            scen = "PROYECTO"
-        elif re.search(r"situaci[oó]n\s+base", tl, re.I) and \
-             re.search(r"grados?\s+de\s+saturaci[oó]n", tl, re.I):
-            scen = "BASE"
-        elif re.search(r"situaci[oó]n\s+actual", tl, re.I) and \
-             re.search(r"grados?\s+de\s+saturaci[oó]n", tl, re.I):
-            scen = "ACTUAL"
-
-        if not scen:
+        # Una página puede ser continuación de la tabla anterior y comenzar
+        # directamente con "Arco Grados de saturación...".
+        has_gs_header=bool(re.search(r"arco\s+grados?\s+de\s+saturaci[oó]n", t, re.I))
+        if not active or not has_gs_header:
+            # Si aparece una sección distinta y no hay tabla GS, no reutilizar
+            # indefinidamente el escenario activo.
+            if detected is None and re.search(r"\b(?:tiempo de viaje|combustible|9\.4|9\.5|10\.)\b", t, re.I):
+                active=None
             continue
 
-        # El patrón de encabezado ahora incluye "con proyecto".
-        rows = _rows_after_header(
+        rows=_rows_after_header(
             t,
-            r"grados?\s+de\s+saturaci[oó]n\s*[-–:]?\s*"
-            r"situaci[oó]n\s+(?:con\s+)?(?:actual|base|proyecto)"
-            r"(?:\s+mitigad[oa])?"
+            r"arco\s+grados?\s+de\s+saturaci[oó]n\s*-\s*situaci[oó]n\s+(?:actual|base|proyecto)"
         )
-
-        # Sólo guardar páginas que realmente entregan filas de GS.
         if rows:
-            for arc, pm, pt in rows:
-                scenarios[scen][arc] = {
-                    "PM-L": pm,
-                    "PT-L": pt,
-                    "page": p["page"]
-                }
-            source_pages[scen].add(p["page"])
+            for arc,pm,pt in rows:
+                scenarios[active][arc]={"PM-L":pm,"PT-L":pt,"page":p["page"]}
+            source_pages[active].add(p["page"])
 
     return scenarios, source_pages
 
@@ -701,7 +703,7 @@ with tabs[3]:
         st.download_button(
             "Descargar ficha consolidada CSV",
             df_sheet.to_csv(index=False).encode("utf-8-sig"),
-            file_name="ficha_consolidada_arcos_v15.csv",
+            file_name="ficha_consolidada_arcos_v16.csv",
             mime="text/csv"
         )
     else:
@@ -718,7 +720,7 @@ with tabs[4]:
         st.download_button(
             "Descargar matriz de observaciones CSV",
             df_matrix.to_csv(index=False).encode("utf-8-sig"),
-            file_name="matriz_observaciones_consultor_v15.csv",
+            file_name="matriz_observaciones_consultor_v16.csv",
             mime="text/csv"
         )
     else:

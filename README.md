@@ -1,23 +1,19 @@
-# IA Revisor Vial — Versión 1.5
+# IA Revisor Vial — Versión 1.6
 
-Se reemplaza la heurística de 1.4 por un extractor estructural.
+Extractor corregido después de revisar directamente el IMIV piloto.
 
-## Cambio clave
-El parser reconoce expresamente las variantes de encabezado:
-- Situación Actual
-- Situación Base
-- Situación Proyecto
-- Situación con Proyecto
-- Situación Proyecto Mitigado
-- Situación con Proyecto Mitigado
+Hallazgo documental:
+- Cuadro 8.1 = Situación Base.
+- Cuadro 9.11 = Situación con Proyecto.
+- Cuadro 9.16 = Situación con Proyecto Mitigado.
+- El Cuadro 9.16 conserva internamente el rótulo “Grados de saturación - Situación Proyecto”.
+  Por eso no es válido clasificar el escenario usando sólo ese rótulo.
 
-Primero identifica el escenario por el encabezado de la tabla y después extrae
-Arco / PM-L / PT-L. No mueve valores entre escenarios ni infiere valores faltantes.
+La versión 1.6 clasifica por número/título del cuadro y mantiene ese escenario
+en las páginas de continuación.
 
-Esto corrige la omisión de tablas tituladas “Situación con Proyecto”, que el
-parser anterior no reconocía como PROYECTO.
-
-## Control del piloto
-La validación esperada para arco 1312 es:
-- PM-L: Base 1,19 → Proyecto 1,19 → Mitigado 0,54
-- PT-L: Base 1,18 → Proyecto 1,18 → Mitigado 0,58
+Control documental:
+- 1312 PM-L: 119 → 119 → 54
+- 1312 PT-L: 118 → 118 → 58
+- 1315 PM-L: 119 → 119 → 54
+- 1315 PT-L: 118 → 118 → 58
