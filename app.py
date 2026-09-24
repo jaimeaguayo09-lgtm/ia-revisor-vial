@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.5")
-st.caption("Revisión técnica 1.9.5: integra las observaciones aritméticas confirmadas al resumen general y al informe PDF.")
+st.title("🛣️ IA Revisor Vial — Versión 1.9.6")
+st.caption("Revisión técnica 1.9.6: mejora el informe PDF con resumen ejecutivo y separación entre observaciones confirmadas, alertas técnicas y comprobaciones.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -796,31 +796,62 @@ def make_pdf(project,source,n_pages,obs):
     title=ParagraphStyle("t",parent=ss["Title"],alignment=TA_CENTER,fontSize=15,leading=18)
     body=ParagraphStyle("b",parent=ss["BodyText"],fontSize=9,leading=12)
     small=ParagraphStyle("s",parent=ss["BodyText"],fontSize=7,leading=9)
+    h2=ParagraphStyle("h2x",parent=ss["Heading2"],fontSize=12,leading=14,spaceBefore=8,spaceAfter=6)
+
+    confirmed=[x for x in obs if "OBSERVACIÓN CONFIRMADA" in str(x.get("Clasificación",""))]
+    alerts=[x for x in obs if "ALERTA" in str(x.get("Clasificación",""))]
+    checks=[x for x in obs if "COMPROBACIÓN" in str(x.get("Clasificación",""))]
+
     story=[Paragraph("INFORME DE OBSERVACIONES — REVISIÓN AUTOMATIZADA",title),Spacer(1,10),
            Paragraph(f"<b>Proyecto:</b> {project}",body),
            Paragraph(f"<b>Documento:</b> {source}",body),
-           Paragraph(f"<b>Páginas:</b> {n_pages}",body),
-           Paragraph("<b>Alcance:</b> hallazgos automáticos con evidencia textual. La ausencia de observaciones no equivale a aprobación técnica integral.",body),
-           Spacer(1,12)]
-    if not obs:
-        story.append(Paragraph("No se generaron observaciones automáticas con el umbral de evidencia de esta versión.",body))
-    else:
+           Paragraph(f"<b>Páginas del estudio:</b> {n_pages}",body),
+           Paragraph("<b>Alcance:</b> revisión automatizada con evidencia textual y comprobaciones determinísticas. La ausencia de observaciones no equivale a aprobación técnica integral.",body),
+           Spacer(1,12), Paragraph("Resumen ejecutivo",h2)]
+
+    summary=[
+        ["Categoría","Cantidad","Interpretación"],
+        ["Observaciones confirmadas",str(len(confirmed)),Paragraph("Diferencias demostradas mediante evidencia y/o recálculo determinístico.",small)],
+        ["Alertas técnicas",str(len(alerts)),Paragraph("Situaciones que requieren revisión profesional; no equivalen automáticamente a incumplimiento normativo.",small)],
+        ["Comprobaciones",str(len(checks)),Paragraph("Controles numéricos o documentales que resultaron trazables.",small)],
+    ]
+    ts=Table(summary,colWidths=[4.2*cm,2.0*cm,10.2*cm],repeatRows=1)
+    ts.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.3,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
+                            ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("VALIGN",(0,0),(-1,-1),"TOP")]))
+    story += [ts,Spacer(1,12)]
+
+    def section(title_txt, items, intro):
+        story.append(Paragraph(title_txt,h2))
+        story.append(Paragraph(intro,body))
+        story.append(Spacer(1,6))
+        if not items:
+            story.append(Paragraph("No se registraron resultados en esta categoría.",body)); return
         rows=[["ID","Pág.","Materia","Clasificación","Observación"]]
-        for x in obs:
-            rows.append([x["ID"],x["Página"],Paragraph(x["Materia"],small),Paragraph(x["Clasificación"],small),Paragraph(x["Hallazgo"],small)])
-        t=Table(rows,colWidths=[1.1*cm,1.3*cm,3.1*cm,3*cm,8.5*cm],repeatRows=1)
+        for x in items:
+            rows.append([str(x.get("ID","")),str(x.get("Página","—")),Paragraph(str(x.get("Materia","")),small),
+                         Paragraph(str(x.get("Clasificación","")),small),Paragraph(str(x.get("Hallazgo","")),small)])
+        t=Table(rows,colWidths=[1.35*cm,1.35*cm,3.0*cm,3.1*cm,8.2*cm],repeatRows=1)
         t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.3,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-                               ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("VALIGN",(0,0),(-1,-1),"TOP")]))
-        story += [Paragraph("Matriz de observaciones",ss["Heading2"]),t,PageBreak(),Paragraph("Detalle",ss["Heading2"])]
-        for x in obs:
-            ev=x["Evidencia"].replace("\n\n","<br/><br/>")
-            story += [Paragraph(f"{x['ID']} — {x['Materia']}",ss["Heading3"]),
-                      Paragraph(f"<b>Página(s):</b> {x['Página']}",body),
-                      Paragraph(f"<b>Clasificación:</b> {x['Clasificación']}",body),
-                      Paragraph(f"<b>Observación:</b> {x['Hallazgo']}",body),
-                      Paragraph(f"<b>Evidencia:</b> {ev}",body),
-                      Paragraph(f"<b>Comprobación:</b> {x['Comprobación']}",body),
-                      Paragraph(f"<b>Acción requerida:</b> {x['Acción requerida']}",body),Spacer(1,12)]
+                               ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("VALIGN",(0,0),(-1,-1),"TOP"),
+                               ("LEFTPADDING",(0,0),(-1,-1),3),("RIGHTPADDING",(0,0),(-1,-1),3)]))
+        story.append(t)
+
+    section("1. Observaciones confirmadas",confirmed,"Hallazgos demostrados. Estas observaciones se presentan primero para facilitar su remisión y corrección por el consultor.")
+    story.append(PageBreak())
+    section("2. Alertas técnicas",alerts,"Alertas derivadas de la evolución de los indicadores analizados. Requieren revisión profesional y no se califican por sí solas como incumplimiento normativo.")
+    story.append(PageBreak())
+    section("3. Comprobaciones",checks,"Resultados de controles numéricos y documentales utilizados para mantener trazabilidad de la revisión.")
+
+    story += [PageBreak(),Paragraph("4. Detalle y trazabilidad",h2)]
+    for x in confirmed + alerts + checks:
+        ev=str(x.get("Evidencia","")).replace("\n\n","<br/><br/>")
+        story += [Paragraph(f"{x.get('ID','')} — {x.get('Materia','')}",ss["Heading3"]),
+                  Paragraph(f"<b>Página(s):</b> {x.get('Página','—')}",body),
+                  Paragraph(f"<b>Clasificación:</b> {x.get('Clasificación','')}",body),
+                  Paragraph(f"<b>Observación:</b> {x.get('Hallazgo','')}",body),
+                  Paragraph(f"<b>Evidencia:</b> {ev}",body),
+                  Paragraph(f"<b>Comprobación:</b> {x.get('Comprobación','')}",body),
+                  Paragraph(f"<b>Acción requerida:</b> {x.get('Acción requerida','')}",body),Spacer(1,12)]
     doc.build(story); return b.getvalue()
 
 with st.sidebar:
@@ -844,7 +875,7 @@ if st.button("Analizar estudio",type="primary"):
 
 confirmed, alerts, conforms = st.session_state.get("review04", ([], [], []))
 
-# Integración 1.9.5: el módulo aritmético validado alimenta el resumen general.
+# Integración 1.9.6: el módulo aritmético validado alimenta el resumen general.
 arithmetic_summary = deterministic_arithmetic_checks(pages)
 arithmetic_confirmed = [
     r for r in arithmetic_summary
@@ -930,7 +961,7 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe de Observaciones 1.0 (PDF)",
+        "📄 Generar Informe de Observaciones 1.9.6 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
