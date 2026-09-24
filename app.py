@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.4")
-st.caption("Revisión técnica 1.4: trazabilidad estricta Base → Proyecto → Mitigado y evaluación reglamentaria del grado de saturación.")
+st.title("🛣️ IA Revisor Vial — Versión 1.4.1")
+st.caption("Revisión técnica 1.4.1: corrección del parser de escenarios y trazabilidad estricta Base → Proyecto → Mitigado.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -411,7 +411,8 @@ def _strict_scenario_tables(pages):
     BASE -> PROYECTO -> MITIGADO. Si no existe una terna inequívoca, el dato
     queda incompleto en vez de desplazar MITIGADO a PROYECTO.
     """
-    raw = _scenario_tables(pages)
+    raw_result = _scenario_tables(pages)
+    raw = raw_result[0] if isinstance(raw_result, tuple) else raw_result
 
     # Copia defensiva
     out = {}
