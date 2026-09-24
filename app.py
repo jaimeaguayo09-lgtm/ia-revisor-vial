@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.0")
-st.caption("Revisión técnica 1.0: GS, flujos inducidos, distribución de viajes y tiempos de viaje con trazabilidad.")
+st.title("🛣️ IA Revisor Vial — Versión 1.1")
+st.caption("Revisión técnica 1.1: ficha consolidada por arco/período, GS Base → Proyecto → Mitigado, impacto incremental y trazabilidad.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -398,6 +398,81 @@ def technical_checks(pages, selected):
             row["ID"]=f"{prefix}-{i:03d}"
     return confirmed, alerts, conforms
 
+def build_arc_sheet(pages):
+    scenarios, _ = _scenario_tables(pages)
+    rows = []
+    arcs = set()
+    for scen in scenarios.values():
+        arcs |= set(scen.keys())
+
+    for arc in sorted(arcs, key=lambda x:int(x)):
+        for period in ["PM-L", "PT-L"]:
+            def val(s):
+                return scenarios[s].get(arc, {}).get(period)
+            def pg(s):
+                return scenarios[s].get(arc, {}).get("page")
+
+            b, p, m = val("BASE"), val("PROYECTO"), val("MITIGADO")
+            if b is None and p is None and m is None:
+                continue
+
+            delta = (p-b) if (b is not None and p is not None) else None
+            mit_delta = (m-p) if (m is not None and p is not None) else None
+
+            if p is None:
+                state = "REQUIERE TRAZABILIDAD"
+            elif p > 100:
+                state = "SOBRESATURADO (>1,00)"
+            elif p > 85:
+                state = "SOBRE UMBRAL (>0,85)"
+            else:
+                state = "ACEPTABLE (≤0,85)"
+
+            if delta is None:
+                impact = "NO CALCULABLE"
+            elif delta <= 0:
+                impact = "SIN AUMENTO"
+            elif delta >= 10:
+                impact = "ALTO (≥0,10)"
+            elif delta >= 5:
+                impact = "MEDIO (0,05–0,09)"
+            else:
+                impact = "BAJO (0,01–0,04)"
+
+            if p is not None and (p > 100 or (delta is not None and delta >= 10)):
+                priority = "ALTA"
+            elif p is not None and (p > 85 or (delta is not None and delta >= 5)):
+                priority = "MEDIA"
+            else:
+                priority = "REVISIÓN"
+
+            if p is not None and m is not None:
+                if m < p:
+                    effect = f"Reduce {p-m} pp"
+                elif m > p:
+                    effect = f"Aumenta {m-p} pp"
+                else:
+                    effect = "Sin variación"
+            else:
+                effect = "NO CALCULABLE"
+
+            pages_used = [str(x) for x in [pg("BASE"),pg("PROYECTO"),pg("MITIGADO")] if x]
+            rows.append({
+                "Arco": arc,
+                "Período": period,
+                "GS Base": "—" if b is None else f"{b/100:.2f}".replace(".",","),
+                "GS Proyecto": "—" if p is None else f"{p/100:.2f}".replace(".",","),
+                "Δ Proyecto-Base": "—" if delta is None else f"{delta/100:+.2f}".replace(".",","),
+                "GS Mitigado": "—" if m is None else f"{m/100:.2f}".replace(".",","),
+                "Δ Mitigado-Proyecto": "—" if mit_delta is None else f"{mit_delta/100:+.2f}".replace(".",","),
+                "Estado operacional": state,
+                "Impacto incremental": impact,
+                "Efecto mitigación": effect,
+                "Prioridad": priority,
+                "Página(s)": ", ".join(dict.fromkeys(pages_used)) or "—"
+            })
+    return rows
+
 def analyze(pages, selected):
     return technical_checks(pages, selected)
 
@@ -467,7 +542,7 @@ if alerts:
     pr = sum(1 for x in alerts if x.get("Prioridad") == "REVISIÓN")
     st.caption(f"Prioridad de alertas: Alta {pa} · Media {pm} · Revisión {pr}")
 
-tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones"])
+tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco"])
 
 def show_rows(rows, empty_msg):
     if not rows:
@@ -521,4 +596,21 @@ if all_report:
     )
 
 st.caption("Criterio de trabajo: GS Proyecto ≤ 0,85 aceptable; >0,85 sobre umbral; >1,00 sobresaturado. El impacto se calcula únicamente como GS Proyecto − GS Base. No se usan otros porcentajes de la evidencia para clasificar el impacto.")
+
+
+
+with tabs[3]:
+    sheet = build_arc_sheet(pages)
+    if sheet:
+        df_sheet = pd.DataFrame(sheet)
+        st.caption("Una fila por arco y período. Los valores se vinculan únicamente cuando Base, Proyecto y/o Mitigado fueron extraídos de tablas identificables.")
+        st.dataframe(df_sheet, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Descargar ficha consolidada CSV",
+            df_sheet.to_csv(index=False).encode("utf-8-sig"),
+            file_name="ficha_consolidada_arcos_v11.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("No se identificaron tablas de GS suficientes para construir la ficha consolidada.")
 

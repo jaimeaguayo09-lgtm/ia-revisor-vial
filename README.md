@@ -1,14 +1,15 @@
-# IA Revisor Vial — Versión 1.0
+# IA Revisor Vial — Versión 1.1
 
-Base estable del revisor técnico.
+Novedad principal:
+- Ficha consolidada por arco y período.
+- GS Base → Proyecto → Mitigado.
+- Δ Proyecto−Base calculado exclusivamente con esos dos escenarios.
+- Δ Mitigado−Proyecto.
+- Estado operacional con criterio de trabajo GS <= 0,85.
+- Impacto incremental separado del estado operacional.
+- Efecto de mitigación.
+- Prioridad y páginas de trazabilidad.
+- Descarga CSV de la ficha consolidada.
 
-Módulos:
-- Grado de saturación con umbral de trabajo GS <= 0,85.
-- Comparación Base → Proyecto → Mitigado.
-- Impacto incremental calculado exclusivamente como GS Proyecto - GS Base.
-- Extracción de totales de distribución de flujos inducidos PM-L/PT-L.
-- Comprobación aritmética de tiempos de viaje cuando la tabla es inequívoca.
-- Control de disponibilidad de longitudes de cola: si no existe evidencia textual suficiente, se marca para revisión profesional y no se inventan datos.
-- Informe PDF y CSV con trazabilidad.
-
-Próximos módulos: colas y demoras desde tablas/anexos inequívocos; NDS; biblioteca normativa controlada.
+Se mantienen los módulos 1.0 de flujos inducidos, distribución y tiempos de viaje.
+No se inventan datos faltantes.
