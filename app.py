@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Prototipo 0.7")
-st.caption("Revisión priorizada por arco y período: consolida escenarios y asigna prioridad técnica según magnitud y saturación.")
+st.title("🛣️ IA Revisor Vial — Prototipo 0.8")
+st.caption("Revisión operacional: usa GS ≤ 0,85 como umbral aceptable y separa estado operacional del impacto incremental del proyecto.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -245,16 +245,33 @@ def technical_checks(pages, selected):
                 "Acción requerida":"Continuar con controles técnicos específicos."
             })
 
-    # Priorización técnica: no equivale a incumplimiento ni a juicio normativo.
-    # Alta: valores >100% o aumentos Base→Proyecto >=10 pp.
-    # Media: valores >85% o aumentos >=5 pp.
-    # Revisión: variaciones menores que conviene mantener trazadas.
+    # Criterio de trabajo definido para este revisor:
+    # GS <= 0,85: aceptable; GS > 0,85: alerta; GS > 1,00: sobresaturado.
+    # Se separa el estado operacional del impacto incremental Base→Proyecto.
     for row in alerts:
         txt = (row.get("Hallazgo","") + " " + row.get("Evidencia","")).lower()
         nums = [int(x) for x in re.findall(r"(?<!\d)(\d{1,3})\s*%", txt)]
         deltas = [abs(int(x)) for x in re.findall(r"([+-]\d+)\s+puntos", txt)]
         maxpct = max(nums) if nums else 0
         maxdelta = max(deltas) if deltas else 0
+
+        if maxpct > 100:
+            row["Estado operacional"] = "SOBRESATURADO (>1,00)"
+        elif maxpct > 85:
+            row["Estado operacional"] = "SOBRE UMBRAL (>0,85)"
+        else:
+            row["Estado operacional"] = "ACEPTABLE (≤0,85)"
+
+        if maxdelta >= 10:
+            row["Impacto incremental"] = "ALTO (≥10 pp)"
+        elif maxdelta >= 5:
+            row["Impacto incremental"] = "MEDIO (5–9 pp)"
+        elif maxdelta > 0:
+            row["Impacto incremental"] = "BAJO (1–4 pp)"
+        else:
+            row["Impacto incremental"] = "SIN AUMENTO DETECTADO"
+
+        # Prioridad de revisión combina ambos ejes, pero no los confunde.
         if maxpct > 100 or maxdelta >= 10:
             row["Prioridad"] = "ALTA"
         elif maxpct > 85 or maxdelta >= 5:
@@ -264,8 +281,12 @@ def technical_checks(pages, selected):
 
     for row in confirmed:
         row["Prioridad"] = "ALTA"
+        row["Estado operacional"] = "—"
+        row["Impacto incremental"] = "—"
     for row in conforms:
         row["Prioridad"] = "—"
+        row["Estado operacional"] = "—"
+        row["Impacto incremental"] = "—"
 
     for prefix, rows in [("OBS",confirmed),("ALT",alerts),("CHK",conforms)]:
         for i,row in enumerate(rows,1):
@@ -348,13 +369,17 @@ def show_rows(rows, empty_msg):
         st.info(empty_msg)
         return
     df = pd.DataFrame(rows)
-    cols = ["ID","Prioridad","Página","Materia","Hallazgo","Comprobación","Clasificación"]
+    cols = ["ID","Prioridad","Estado operacional","Impacto incremental","Página","Materia","Hallazgo","Comprobación","Clasificación"]
     cols = [c for c in cols if c in df.columns]
     st.dataframe(df[cols], use_container_width=True, hide_index=True)
     chosen = st.selectbox("Ver detalle", [x["ID"] for x in rows], key="detail_"+rows[0]["ID"][:3])
     x = next(y for y in rows if y["ID"] == chosen)
     if "Prioridad" in x:
-        st.markdown(f"**Prioridad técnica:** {x['Prioridad']}")
+        st.markdown(f"**Prioridad de revisión:** {x['Prioridad']}")
+    if "Estado operacional" in x and x["Estado operacional"] != "—":
+        st.markdown(f"**Estado operacional:** {x['Estado operacional']}")
+    if "Impacto incremental" in x and x["Impacto incremental"] != "—":
+        st.markdown(f"**Impacto incremental del proyecto:** {x['Impacto incremental']}")
     st.markdown(f"**Página(s):** {x['Página']}")
     st.markdown(f"**Hallazgo:** {x['Hallazgo']}")
     st.markdown(f"**Comprobación:** {x['Comprobación']}")
@@ -388,5 +413,5 @@ if all_report:
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
 
-st.caption("La herramienta apoya la revisión profesional. Una alerta no equivale a incumplimiento normativo y una comprobación documental no equivale a aprobación integral.")
+st.caption("Criterio de trabajo del revisor: GS ≤ 0,85 aceptable; GS > 0,85 genera alerta; GS > 1,00 se identifica como sobresaturado. El impacto incremental Base→Proyecto se informa por separado. La herramienta apoya la revisión profesional.")
 
