@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Prototipo 0.8")
-st.caption("Revisión operacional: usa GS ≤ 0,85 como umbral aceptable y separa estado operacional del impacto incremental del proyecto.")
+st.title("🛣️ IA Revisor Vial — Prototipo 0.9")
+st.caption("Revisión operacional: calcula el impacto exclusivamente como GS Proyecto − GS Base y evalúa por separado el GS del escenario Proyecto.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -187,7 +187,12 @@ def technical_checks(pages, selected):
                             "Evidencia": f"{chain}.",
                             "Comprobación": "Comparación consolidada del mismo arco y período entre escenarios Base → Proyecto → Mitigado.",
                             "Clasificación": "ALERTA TÉCNICA CONSOLIDADA",
-                            "Acción requerida": "Revisar la incidencia atribuible al proyecto y vincular la variación con la medida de mitigación correspondiente."
+                            "Acción requerida": "Revisar la incidencia atribuible al proyecto y vincular la variación con la medida de mitigación correspondiente.",
+                            "_gs_base": b,
+                            "_gs_proyecto": p,
+                            "_gs_mitigado": m,
+                            "_delta_bp": dp,
+                            "_delta_pm": dm
                         })
 
                     if p > 85 and m <= 85:
@@ -208,7 +213,12 @@ def technical_checks(pages, selected):
                             "Evidencia": f"{chain}.",
                             "Comprobación": "Comparación numérica Proyecto → Mitigado.",
                             "Clasificación": "ALERTA TÉCNICA CONSOLIDADA",
-                            "Acción requerida": "Revisar la suficiencia de la medida para este arco/período."
+                            "Acción requerida": "Revisar la suficiencia de la medida para este arco/período.",
+                            "_gs_base": b,
+                            "_gs_proyecto": p,
+                            "_gs_mitigado": m,
+                            "_delta_bp": dp,
+                            "_delta_pm": dm
                         })
 
                 # Si no existe cadena completa, conserva solo casos altos y los agrupa.
@@ -245,48 +255,67 @@ def technical_checks(pages, selected):
                 "Acción requerida":"Continuar con controles técnicos específicos."
             })
 
-    # Criterio de trabajo definido para este revisor:
-    # GS <= 0,85: aceptable; GS > 0,85: alerta; GS > 1,00: sobresaturado.
-    # Se separa el estado operacional del impacto incremental Base→Proyecto.
+    # Criterio de trabajo:
+    # Estado operacional = GS del escenario PROYECTO.
+    # Impacto incremental = GS PROYECTO - GS BASE, exclusivamente.
+    # No se usan otros porcentajes del texto para calcular el impacto.
     for row in alerts:
-        txt = (row.get("Hallazgo","") + " " + row.get("Evidencia","")).lower()
-        nums = [int(x) for x in re.findall(r"(?<!\d)(\d{1,3})\s*%", txt)]
-        deltas = [abs(int(x)) for x in re.findall(r"([+-]\d+)\s+puntos", txt)]
-        maxpct = max(nums) if nums else 0
-        maxdelta = max(deltas) if deltas else 0
+        p = row.get("_gs_proyecto")
+        b = row.get("_gs_base")
+        delta = row.get("_delta_bp")
 
-        if maxpct > 100:
-            row["Estado operacional"] = "SOBRESATURADO (>1,00)"
-        elif maxpct > 85:
-            row["Estado operacional"] = "SOBRE UMBRAL (>0,85)"
-        else:
-            row["Estado operacional"] = "ACEPTABLE (≤0,85)"
+        if p is not None:
+            row["GS Base"] = f"{b/100:.2f}".replace(".", ",") if b is not None else "—"
+            row["GS Proyecto"] = f"{p/100:.2f}".replace(".", ",")
+            row["Δ Proyecto-Base"] = (f"{delta/100:+.2f}".replace(".", ",")
+                                      if delta is not None else "—")
 
-        if maxdelta >= 10:
-            row["Impacto incremental"] = "ALTO (≥10 pp)"
-        elif maxdelta >= 5:
-            row["Impacto incremental"] = "MEDIO (5–9 pp)"
-        elif maxdelta > 0:
-            row["Impacto incremental"] = "BAJO (1–4 pp)"
-        else:
-            row["Impacto incremental"] = "SIN AUMENTO DETECTADO"
+            if p > 100:
+                row["Estado operacional"] = "SOBRESATURADO (>1,00)"
+            elif p > 85:
+                row["Estado operacional"] = "SOBRE UMBRAL (>0,85)"
+            else:
+                row["Estado operacional"] = "ACEPTABLE (≤0,85)"
 
-        # Prioridad de revisión combina ambos ejes, pero no los confunde.
-        if maxpct > 100 or maxdelta >= 10:
-            row["Prioridad"] = "ALTA"
-        elif maxpct > 85 or maxdelta >= 5:
-            row["Prioridad"] = "MEDIA"
+            if delta is None or delta <= 0:
+                row["Impacto incremental"] = "SIN AUMENTO"
+            elif delta >= 10:
+                row["Impacto incremental"] = "ALTO (≥0,10)"
+            elif delta >= 5:
+                row["Impacto incremental"] = "MEDIO (0,05–0,09)"
+            else:
+                row["Impacto incremental"] = "BAJO (0,01–0,04)"
+
+            # Prioridad de revisión: estado e impacto siguen siendo columnas separadas.
+            if p > 100 or (delta is not None and delta >= 10):
+                row["Prioridad"] = "ALTA"
+            elif p > 85 or (delta is not None and delta >= 5):
+                row["Prioridad"] = "MEDIA"
+            else:
+                row["Prioridad"] = "REVISIÓN"
         else:
+            # Cadena incompleta: no se inventa Base→Proyecto.
+            row["GS Base"] = "—"
+            row["GS Proyecto"] = "—"
+            row["Δ Proyecto-Base"] = "—"
+            row["Estado operacional"] = "REQUIERE TRAZABILIDAD"
+            row["Impacto incremental"] = "NO CALCULABLE"
             row["Prioridad"] = "REVISIÓN"
 
     for row in confirmed:
         row["Prioridad"] = "ALTA"
         row["Estado operacional"] = "—"
         row["Impacto incremental"] = "—"
+        row["GS Base"] = "—"
+        row["GS Proyecto"] = "—"
+        row["Δ Proyecto-Base"] = "—"
     for row in conforms:
         row["Prioridad"] = "—"
         row["Estado operacional"] = "—"
         row["Impacto incremental"] = "—"
+        row["GS Base"] = "—"
+        row["GS Proyecto"] = "—"
+        row["Δ Proyecto-Base"] = "—"
 
     for prefix, rows in [("OBS",confirmed),("ALT",alerts),("CHK",conforms)]:
         for i,row in enumerate(rows,1):
@@ -369,15 +398,17 @@ def show_rows(rows, empty_msg):
         st.info(empty_msg)
         return
     df = pd.DataFrame(rows)
-    cols = ["ID","Prioridad","Estado operacional","Impacto incremental","Página","Materia","Hallazgo","Comprobación","Clasificación"]
+    cols = ["ID","Prioridad","GS Base","GS Proyecto","Δ Proyecto-Base","Estado operacional","Impacto incremental","Página","Materia","Hallazgo","Comprobación","Clasificación"]
     cols = [c for c in cols if c in df.columns]
     st.dataframe(df[cols], use_container_width=True, hide_index=True)
     chosen = st.selectbox("Ver detalle", [x["ID"] for x in rows], key="detail_"+rows[0]["ID"][:3])
     x = next(y for y in rows if y["ID"] == chosen)
     if "Prioridad" in x:
         st.markdown(f"**Prioridad de revisión:** {x['Prioridad']}")
+    if x.get("GS Base","—") != "—":
+        st.markdown(f"**GS Base:** {x['GS Base']}  |  **GS Proyecto:** {x['GS Proyecto']}  |  **Δ Proyecto-Base:** {x['Δ Proyecto-Base']}")
     if "Estado operacional" in x and x["Estado operacional"] != "—":
-        st.markdown(f"**Estado operacional:** {x['Estado operacional']}")
+        st.markdown(f"**Estado operacional del escenario Proyecto:** {x['Estado operacional']}")
     if "Impacto incremental" in x and x["Impacto incremental"] != "—":
         st.markdown(f"**Impacto incremental del proyecto:** {x['Impacto incremental']}")
     st.markdown(f"**Página(s):** {x['Página']}")
@@ -413,5 +444,5 @@ if all_report:
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
 
-st.caption("Criterio de trabajo del revisor: GS ≤ 0,85 aceptable; GS > 0,85 genera alerta; GS > 1,00 se identifica como sobresaturado. El impacto incremental Base→Proyecto se informa por separado. La herramienta apoya la revisión profesional.")
+st.caption("Criterio de trabajo: GS Proyecto ≤ 0,85 aceptable; >0,85 sobre umbral; >1,00 sobresaturado. El impacto se calcula únicamente como GS Proyecto − GS Base. No se usan otros porcentajes de la evidencia para clasificar el impacto.")
 

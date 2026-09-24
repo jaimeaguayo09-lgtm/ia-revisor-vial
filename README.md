@@ -1,18 +1,17 @@
-# IA Revisor Vial — Prototipo 0.8
+# IA Revisor Vial — Prototipo 0.9
 
-Criterio de trabajo configurado:
-- GS <= 0,85: aceptable.
-- GS > 0,85: alerta operacional.
-- GS > 1,00: sobresaturado.
+Corrección del motor de saturación.
 
-La aplicación separa:
-1. Estado operacional.
-2. Impacto incremental Base → Proyecto.
-3. Prioridad de revisión.
+- Estado operacional: usa exclusivamente GS del escenario Proyecto.
+- Umbral de trabajo: GS <= 0,85 aceptable; GS > 0,85 sobre umbral; GS > 1,00 sobresaturado.
+- Impacto incremental: se calcula exclusivamente como GS Proyecto - GS Base.
+- La tabla muestra GS Base, GS Proyecto y delta Proyecto-Base.
+- No se extraen porcentajes del texto para clasificar el impacto.
+- Si falta Base o Proyecto, el impacto queda como NO CALCULABLE.
 
-El impacto incremental se clasifica para triage:
-- Bajo: 1–4 puntos porcentuales.
-- Medio: 5–9 pp.
-- Alto: >=10 pp.
+Bandas internas de triage del impacto:
+- Bajo: +0,01 a +0,04
+- Medio: +0,05 a +0,09
+- Alto: >= +0,10
 
-Estas bandas de impacto son reglas internas de priorización del prototipo.
+Estas bandas son reglas internas del prototipo y no una declaración normativa.
