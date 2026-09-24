@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.4.2")
-st.caption("Revisión técnica 1.4.2: corrección del contrato del parser y trazabilidad Base → Proyecto → Mitigado.")
+st.title("🛣️ IA Revisor Vial — Versión 1.5")
+st.caption("Revisión técnica 1.5: extractor estructural por encabezado de escenario Base → Proyecto → Mitigado.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -83,30 +83,67 @@ def _rows_after_header(text, header_pattern):
     return rows
 
 def _scenario_tables(pages):
+    """
+    Extractor 1.5: identifica primero el escenario por el encabezado de la tabla
+    y sólo después extrae Arco / PM-L / PT-L.
+
+    Admite las variantes del estudio:
+    - Situación Actual
+    - Situación Base
+    - Situación Proyecto
+    - Situación con Proyecto
+    - Situación Proyecto Mitigado
+    - Situación con Proyecto Mitigado
+    """
     scenarios = {"ACTUAL": {}, "BASE": {}, "PROYECTO": {}, "MITIGADO": {}}
-    source_pages = {}
+    source_pages = {k: set() for k in scenarios}
+
+    header_re = re.compile(
+        r"grados?\s+de\s+saturaci[oó]n\s*[-–:]?\s*"
+        r"situaci[oó]n\s+(?:(?:con)\s+)?"
+        r"(actual|base|proyecto)(?:\s+mitigad[oa])?",
+        re.I
+    )
+
     for p in pages:
         t = p["text"]
         tl = t.lower()
-        scen = None
-        if "grados de saturación - situación actual" in tl or "grados de saturacion - situacion actual" in tl:
-            scen = "ACTUAL"
-        elif "grados de saturación - situación base" in tl or "grados de saturacion - situacion base" in tl:
-            scen = "BASE"
-        elif ("situación con proyecto mitigado" in tl or "situacion con proyecto mitigado" in tl) and \
-             ("grados de saturación" in tl or "grados de saturacion" in tl):
-            scen = "MITIGADO"
-        elif "grados de saturación - situación proyecto" in tl or "grados de saturacion - situacion proyecto" in tl:
-            # Pages explicitly headed as mitigated take precedence.
-            scen = "MITIGADO" if ("proyecto mitigado" in tl) else "PROYECTO"
 
-        if scen:
-            rows = _rows_after_header(
-                t, r"grados?\s+de\s+saturaci[oó]n\s*-\s*situaci[oó]n\s+(?:actual|base|proyecto)"
-            )
+        # Clasificación del escenario: MITIGADO tiene precedencia explícita.
+        scen = None
+        if re.search(r"situaci[oó]n\s+(?:con\s+)?proyecto\s+mitigad[oa]", tl, re.I):
+            scen = "MITIGADO"
+        elif re.search(r"situaci[oó]n\s+(?:con\s+)?proyecto", tl, re.I) and \
+             re.search(r"grados?\s+de\s+saturaci[oó]n", tl, re.I):
+            scen = "PROYECTO"
+        elif re.search(r"situaci[oó]n\s+base", tl, re.I) and \
+             re.search(r"grados?\s+de\s+saturaci[oó]n", tl, re.I):
+            scen = "BASE"
+        elif re.search(r"situaci[oó]n\s+actual", tl, re.I) and \
+             re.search(r"grados?\s+de\s+saturaci[oó]n", tl, re.I):
+            scen = "ACTUAL"
+
+        if not scen:
+            continue
+
+        # El patrón de encabezado ahora incluye "con proyecto".
+        rows = _rows_after_header(
+            t,
+            r"grados?\s+de\s+saturaci[oó]n\s*[-–:]?\s*"
+            r"situaci[oó]n\s+(?:con\s+)?(?:actual|base|proyecto)"
+            r"(?:\s+mitigad[oa])?"
+        )
+
+        # Sólo guardar páginas que realmente entregan filas de GS.
+        if rows:
             for arc, pm, pt in rows:
-                scenarios[scen][arc] = {"PM-L": pm, "PT-L": pt, "page": p["page"]}
-            source_pages.setdefault(scen, set()).add(p["page"])
+                scenarios[scen][arc] = {
+                    "PM-L": pm,
+                    "PT-L": pt,
+                    "page": p["page"]
+                }
+            source_pages[scen].add(p["page"])
+
     return scenarios, source_pages
 
 def technical_checks(pages, selected):
@@ -401,73 +438,14 @@ def technical_checks(pages, selected):
 
 def _strict_scenario_tables(pages):
     """
-    Reordena y valida los escenarios antes de consolidar.
-    Regla: un valor sólo se asigna a BASE/PROYECTO/MITIGADO si proviene de una
-    tabla identificable del escenario correspondiente. Las tablas comparativas
-    posteriores no sustituyen las tablas fuente.
-
-    Para el piloto, cuando el parser heredado detecta páginas repetidas de
-    comparación, se reconstruye por orden de las tablas fuente:
-    BASE -> PROYECTO -> MITIGADO. Si no existe una terna inequívoca, el dato
-    queda incompleto en vez de desplazar MITIGADO a PROYECTO.
+    1.5: usa exclusivamente las tablas identificadas por encabezado de escenario.
+    No desplaza valores entre columnas ni infiere Proyecto a partir de Mitigado.
     """
-    raw_result = _scenario_tables(pages)
-    raw = raw_result[0] if isinstance(raw_result, tuple) else raw_result
-
-    # Copia defensiva
+    scenarios, source_pages = _scenario_tables(pages)
     out = {}
-    for scen, arcs in raw.items():
-        out[scen] = {}
-        for arc, vals in arcs.items():
-            out[scen][arc] = dict(vals)
-
-    # Detectar el patrón imposible que motivó 1.4:
-    # Base > 0.85 y supuesto Proyecto muy inferior a Base, sin Mitigado.
-    # En las tablas del piloto ese segundo valor corresponde a Mitigado.
-    # No inventamos el Proyecto: si el mismo arco/período tiene Base=Proyecto
-    # en una tabla comparativa identificable, se recupera; de lo contrario,
-    # queda como dato faltante.
-    base = out.get("BASE", {})
-    proj = out.get("PROYECTO", {})
-    mit = out.get("MITIGADO", {})
-
-    for arc, bvals in list(base.items()):
-        for period in ("PM-L", "PT-L"):
-            b = bvals.get(period)
-            pv = proj.get(arc, {}).get(period)
-            mv = mit.get(arc, {}).get(period)
-
-            if b is None or pv is None:
-                continue
-
-            # Si falta mitigado y el "proyecto" cae fuertemente respecto de Base,
-            # tratarlo como candidato mitigado, no como Proyecto.
-            if mv is None and b > 0.85 and pv <= b - 0.10:
-                mit.setdefault(arc, {})[period] = pv
-                # En el piloto, las tablas comparativas Base/Proyecto muestran
-                # igualdad para estos arcos; sólo recuperar esa igualdad cuando
-                # existe evidencia textual conjunta en una página.
-                recovered = False
-                for pgno, txt in enumerate(pages, start=1):
-                    if str(arc) not in txt:
-                        continue
-                    # Buscar una fila del arco con dos ocurrencias del valor Base.
-                    btxt = f"{b:.2f}".replace(".", ",")
-                    if txt.count(str(arc)) and txt.count(btxt) >= 2:
-                        proj.setdefault(arc, {})[period] = b
-                        proj[arc]["page"] = pgno
-                        recovered = True
-                        break
-                if not recovered:
-                    proj[arc].pop(period, None)
-
-    out["BASE"] = base
-    out["PROYECTO"] = proj
-    out["MITIGADO"] = mit
-
-    # Mantener el mismo contrato de _scenario_tables(): (escenarios, comparativas).
-    comparisons = raw_result[1] if isinstance(raw_result, tuple) and len(raw_result) > 1 else {}
-    return out, comparisons
+    for scen, arcs in scenarios.items():
+        out[scen] = {arc: dict(vals) for arc, vals in arcs.items()}
+    return out, source_pages
 
 def build_arc_sheet(pages):
     scenarios, _ = _strict_scenario_tables(pages)
@@ -723,7 +701,7 @@ with tabs[3]:
         st.download_button(
             "Descargar ficha consolidada CSV",
             df_sheet.to_csv(index=False).encode("utf-8-sig"),
-            file_name="ficha_consolidada_arcos_v14.csv",
+            file_name="ficha_consolidada_arcos_v15.csv",
             mime="text/csv"
         )
     else:
@@ -740,7 +718,7 @@ with tabs[4]:
         st.download_button(
             "Descargar matriz de observaciones CSV",
             df_matrix.to_csv(index=False).encode("utf-8-sig"),
-            file_name="matriz_observaciones_consultor_v14.csv",
+            file_name="matriz_observaciones_consultor_v15.csv",
             mime="text/csv"
         )
     else:

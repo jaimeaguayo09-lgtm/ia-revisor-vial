@@ -1,16 +1,23 @@
-# IA Revisor Vial — Versión 1.4.2
+# IA Revisor Vial — Versión 1.5
 
-Corrección del ValueError detectado en 1.4.1.
+Se reemplaza la heurística de 1.4 por un extractor estructural.
 
-Causa:
-`build_arc_sheet()` espera desempaquetar dos valores:
-`scenarios, _ = _strict_scenario_tables(pages)`,
-pero la función estricta devolvía solamente el diccionario de escenarios.
+## Cambio clave
+El parser reconoce expresamente las variantes de encabezado:
+- Situación Actual
+- Situación Base
+- Situación Proyecto
+- Situación con Proyecto
+- Situación Proyecto Mitigado
+- Situación con Proyecto Mitigado
 
-Corrección:
-`_strict_scenario_tables()` vuelve a respetar el contrato original y retorna:
-`(escenarios, comparativas)`.
+Primero identifica el escenario por el encabezado de la tabla y después extrae
+Arco / PM-L / PT-L. No mueve valores entre escenarios ni infiere valores faltantes.
 
-Se mantiene la validación de trazabilidad y el objetivo:
-- 1312 PM-L: 1,19 → 1,19 → 0,54
-- 1312 PT-L: 1,18 → 1,18 → 0,58
+Esto corrige la omisión de tablas tituladas “Situación con Proyecto”, que el
+parser anterior no reconocía como PROYECTO.
+
+## Control del piloto
+La validación esperada para arco 1312 es:
+- PM-L: Base 1,19 → Proyecto 1,19 → Mitigado 0,54
+- PT-L: Base 1,18 → Proyecto 1,18 → Mitigado 0,58
