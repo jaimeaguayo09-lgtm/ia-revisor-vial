@@ -1,19 +1,19 @@
-# IA Revisor Vial — Versión 1.9
+# IA Revisor Vial — Versión 1.9.1
 
-Nuevo módulo determinístico de comprobación aritmética para los Cuadros 9.12–9.15:
-- Tiempo de viaje privado.
-- Tiempo de viaje público.
-- Combustible privado.
-- Combustible público.
+Corrección puntual del módulo aritmético 1.9.
 
-El módulo recalcula sumas visibles y sólo clasifica como OBSERVACIÓN CONFIRMADA
-cuando el valor informado no coincide con la operación matemática.
+Problema detectado:
+la búsqueda de la etiqueta `Total` no estaba anclada al inicio de la fila,
+por lo que podía capturar valores de otra línea y generar falsos positivos.
 
-Controles documentales del piloto:
-- Cuadro 9.12: 224 + 212 = 436, correcto.
-- Cuadro 9.13: 11 + 10 = 21; el informe indica 20.
-- Cuadro 9.14: operaciones principales consistentes.
-- Cuadro 9.15: PM-L 35 + PT-L 32 = 67; el informe indica total 66.
-  Además, Ralentí 17 + 15 = 32; el total informado es 31.
+Corrección:
+`PM-L`, `PT-L` y `Total` se reconocen ahora sólo como primer campo de una fila
+física del bloque del cuadro.
 
-La nueva pestaña es “Comprobación aritmética”.
+Resultados esperados del piloto:
+- Cuadro 9.12: correcto.
+- Cuadro 9.13: 11 + 10 = 21 versus 20 informado -> observación confirmada.
+- Cuadro 9.14: sin errores aritméticos.
+- Cuadro 9.15: mantener sólo las inconsistencias aritméticas reales del cuadro.
+
+No se modifica el extractor de grados de saturación.

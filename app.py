@@ -657,7 +657,13 @@ def _table_block(text, table_no):
     return m.group(1) if m else ""
 
 def _numbers_after_label(block, label):
-    m = re.search(rf"\b{re.escape(label)}\b\s+([^\n\r]+)", block, re.I)
+    """
+    Lee exclusivamente la fila cuyo primer campo coincide con label.
+    Evita que 'Total' haga match con la palabra Total contenida en PM-L/PT-L
+    o en encabezados internos.
+    """
+    pattern = rf"(?mi)^[ \t]*{re.escape(label)}[ \t]+([^\n\r]+)$"
+    m = re.search(pattern, block)
     if not m:
         return []
     vals=[]
@@ -916,7 +922,7 @@ with tabs[5]:
         st.download_button(
             "Descargar comprobación aritmética CSV",
             df_arith.to_csv(index=False).encode("utf-8-sig"),
-            file_name="comprobacion_aritmetica_v19.csv",
+            file_name="comprobacion_aritmetica_v19_1.csv",
             mime="text/csv"
         )
     else:
