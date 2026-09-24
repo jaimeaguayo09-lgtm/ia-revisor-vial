@@ -517,6 +517,10 @@ def build_arc_sheet(pages):
                 effect = "NO CALCULABLE"
 
             pages_used = [str(x) for x in [pg("BASE"),pg("PROYECTO"),pg("MITIGADO")] if x]
+            base_meta = scenarios.get("BASE", {}).get(arc, {})
+            proj_meta = scenarios.get("PROYECTO", {}).get(arc, {})
+            mit_meta = scenarios.get("MITIGADO", {}).get(arc, {})
+
             rows.append({
                 "Arco": arc,
                 "Período": period,
@@ -529,6 +533,12 @@ def build_arc_sheet(pages):
                 "Impacto incremental": impact,
                 "Efecto mitigación": effect,
                 "Prioridad": priority,
+                "Fuente Base": base_meta.get("source", "—"),
+                "Página Base": base_meta.get("page", "—"),
+                "Fuente Proyecto": proj_meta.get("source", "—"),
+                "Página Proyecto": proj_meta.get("page", "—"),
+                "Fuente Mitigado": mit_meta.get("source", "—"),
+                "Página Mitigado": mit_meta.get("page", "—"),
                 "Página(s)": ", ".join(dict.fromkeys(pages_used)) or "—"
             })
     return rows
@@ -571,7 +581,10 @@ def build_behavior_alerts(pages):
             "GS Proyecto":r["GS Proyecto"],
             "GS Mitigado":r["GS Mitigado"],
             "Δ Mitigado-Proyecto":f"+{d:.2f}".replace(".", ","),
-            "Página(s)":r["Página(s)"],
+            "Fuente Proyecto":r.get("Fuente Proyecto", "—"),
+            "Página Proyecto":r.get("Página Proyecto", "—"),
+            "Fuente Mitigado":r.get("Fuente Mitigado", "—"),
+            "Página Mitigado":r.get("Página Mitigado", "—"),
             "Alerta técnica":(
                 f"El escenario mitigado aumenta el grado de saturación en {d*100:.0f} "
                 "puntos porcentuales respecto del escenario Proyecto."
@@ -611,7 +624,12 @@ def build_consultant_matrix(pages):
             action = "Completar la trazabilidad antes de concluir cumplimiento reglamentario."
         rows.append({
             "N°":n,"Clasificación":decision,"Arco":r["Arco"],"Período":r["Período"],
-            "Página(s)":r["Página(s)"],
+            "Fuente Base":r.get("Fuente Base", "—"),
+            "Página Base":r.get("Página Base", "—"),
+            "Fuente Proyecto":r.get("Fuente Proyecto", "—"),
+            "Página Proyecto":r.get("Página Proyecto", "—"),
+            "Fuente Mitigado":r.get("Fuente Mitigado", "—"),
+            "Página Mitigado":r.get("Página Mitigado", "—"),
             "Antecedente revisado":"Grado de saturación — art. 3.6.11 letra b), DS N°30",
             "Observación":obs,"Evidencia numérica":evidence,
             "Efecto mitigación":r["Efecto mitigación"],"Acción requerida":action})
@@ -754,7 +772,7 @@ with tabs[3]:
         st.download_button(
             "Descargar ficha consolidada CSV",
             df_sheet.to_csv(index=False).encode("utf-8-sig"),
-            file_name="ficha_consolidada_arcos_v17.csv",
+            file_name="ficha_consolidada_arcos_v18.csv",
             mime="text/csv"
         )
     else:
@@ -771,7 +789,7 @@ with tabs[4]:
         st.download_button(
             "Descargar alertas de comportamiento CSV",
             df_behavior.to_csv(index=False).encode("utf-8-sig"),
-            file_name="alertas_comportamiento_v17.csv",
+            file_name="alertas_comportamiento_v18.csv",
             mime="text/csv"
         )
     else:
@@ -786,7 +804,7 @@ with tabs[5]:
         st.download_button(
             "Descargar matriz de observaciones CSV",
             df_matrix.to_csv(index=False).encode("utf-8-sig"),
-            file_name="matriz_normativa_consultor_v17.csv",
+            file_name="matriz_normativa_consultor_v18.csv",
             mime="text/csv"
         )
     else:
