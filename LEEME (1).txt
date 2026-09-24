@@ -1,0 +1,2 @@
+Coloque aquí los PDF de referencia técnica autorizada.
+No eliminar este archivo: permite que la carpeta exista en GitHub.
