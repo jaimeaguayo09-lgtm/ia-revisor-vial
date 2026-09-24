@@ -1,11 +1,12 @@
-# IA Revisor Vial — Versión 2.3
+# IA Revisor Vial — Versión 2.2
 
-Biblioteca Técnica Controlada permanente.
+Incorpora Biblioteca Técnica Controlada en modo cerrado.
 
-## Carga permanente de documentos
-1. En GitHub abra la carpeta `biblioteca_normativa` o `biblioteca_referencias`.
-2. Use **Add file > Upload files** y cargue los PDF.
-3. Confirme con **Commit changes**.
-4. Streamlit redeplegará la aplicación y los documentos quedarán disponibles de forma permanente.
+- Carga separada de **Normativa obligatoria** y **Referencias técnicas**.
+- Búsqueda local exclusivamente dentro de los PDF cargados por el usuario.
+- Resultados trazables por documento, tipo y página.
+- No realiza búsquedas en Internet para completar requisitos normativos.
+- Si no existe respaldo en la biblioteca cargada, el sistema lo declara y no inventa una fuente.
+- Mantiene el motor técnico de la versión 2.0/2.1 y el informe PDF.
 
-La aplicación no consulta Internet para la revisión normativa. Los documentos de `biblioteca_referencias` son apoyo técnico y no se convierten automáticamente en obligaciones normativas.
+Nota: en esta versión los documentos de biblioteca se cargan en cada sesión de Streamlit; no se guardan permanentemente en un servidor.
