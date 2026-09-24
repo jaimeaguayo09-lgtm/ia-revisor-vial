@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 2.1")
-st.caption("Revisión técnica 2.1: consolida el motor técnico y genera un informe PDF estructurado para revisión y remisión al consultor.")
+st.title("🛣️ IA Revisor Vial — Versión 2.2")
+st.caption("Revisión técnica 2.2: incorpora una Biblioteca Técnica Controlada. La revisión normativa utiliza exclusivamente documentos PDF cargados por el usuario; no consulta Internet.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -813,7 +813,7 @@ def make_pdf(project,source,n_pages,obs):
     story=[
         Spacer(1,1.1*cm),
         Paragraph("INFORME TÉCNICO DE REVISIÓN VIAL",title),
-        Paragraph("IA Revisor Vial — Versión 2.1",subtitle),Spacer(1,14),
+        Paragraph("IA Revisor Vial — Versión 2.2",subtitle),Spacer(1,14),
         Paragraph(f"<b>Proyecto:</b> {project}",body),
         Paragraph(f"<b>Documento revisado:</b> {source}",body),
         Paragraph(f"<b>Extensión:</b> {n_pages} páginas",body),Spacer(1,10),
@@ -889,10 +889,41 @@ def make_pdf(project,source,n_pages,obs):
     doc.build(story)
     return b.getvalue()
 
+
+@st.cache_data(show_spinner=False)
+def extract_library_pdf(data, filename, category):
+    doc = fitz.open(stream=data, filetype="pdf")
+    rows=[]
+    for i,p in enumerate(doc):
+        txt=clean(p.get_text("text"))
+        if txt:
+            rows.append({"Documento":filename,"Tipo":category,"Página":i+1,"Texto":txt})
+    return rows
+
+def search_controlled_library(records, query, max_results=30):
+    q=clean(query).lower()
+    if not q: return []
+    terms=[t for t in re.findall(r"[a-záéíóúüñ0-9.]+",q,re.I) if len(t)>=2]
+    out=[]
+    for r in records:
+        low=r["Texto"].lower()
+        phrase=q in low
+        score=(100 if phrase else 0)+sum(low.count(t) for t in terms)
+        if score<=0: continue
+        pos=low.find(q) if phrase else min([low.find(t) for t in terms if low.find(t)>=0] or [0])
+        ini=max(0,pos-220); fin=min(len(r["Texto"]),pos+520)
+        out.append({"Documento":r["Documento"],"Tipo":r["Tipo"],"Página":r["Página"],"Relevancia":score,"Fragmento":clean(r["Texto"][ini:fin])})
+    out.sort(key=lambda x:(-x["Relevancia"],x["Documento"],x["Página"]))
+    return out[:max_results]
+
 with st.sidebar:
     st.header("Caso")
     project=st.text_input("Nombre","Caso Piloto 001")
     up=st.file_uploader("Estudio PDF",type=["pdf"])
+    st.header("📚 Biblioteca técnica controlada")
+    st.caption("Modo cerrado: sólo se utilizan los documentos cargados aquí. No se realizan búsquedas en Internet.")
+    norm_files=st.file_uploader("Normativa obligatoria",type=["pdf"],accept_multiple_files=True,key="normativa_controlada")
+    ref_files=st.file_uploader("Referencias técnicas",type=["pdf"],accept_multiple_files=True,key="referencias_controladas")
     st.header("Módulos")
     selected=[m for m in MODULES if st.checkbox(m,True,key=m)]
     st.info("Regla 0.3: si no existe evidencia suficiente para demostrar un hallazgo, no se formula como observación.")
@@ -903,6 +934,31 @@ if not up:
 pages=extract_pdf(up.getvalue())
 st.success(f"Documento cargado: {len(pages)} páginas")
 a,b,c=st.columns(3); a.metric("Páginas",len(pages)); b.metric("Módulos seleccionados",len(selected)); c.metric("Proyecto",project)
+
+
+# Biblioteca Técnica Controlada 2.2
+library_records=[]
+for f in (norm_files or []):
+    library_records.extend(extract_library_pdf(f.getvalue(), f.name, "NORMATIVA OBLIGATORIA"))
+for f in (ref_files or []):
+    library_records.extend(extract_library_pdf(f.getvalue(), f.name, "REFERENCIA TÉCNICA"))
+
+with st.expander("📚 Biblioteca Técnica Controlada — búsqueda manual", expanded=False):
+    st.success("🔒 Modo biblioteca cerrada ACTIVADO — Internet deshabilitado para la revisión normativa.")
+    n_norm=len(norm_files or []); n_ref=len(ref_files or [])
+    st.write(f"Documentos cargados: **{n_norm+n_ref}** · Normativa: **{n_norm}** · Referencias: **{n_ref}** · Páginas indexadas: **{len(library_records)}**")
+    if not library_records:
+        st.info("Carga uno o más PDF en la barra lateral. La aplicación no completará requisitos normativos con fuentes externas.")
+    else:
+        q=st.text_input("🔎 Buscar exclusivamente en la biblioteca cargada",placeholder="Ej.: grado de saturación, art. 3.6.11, señalización, estacionamientos")
+        if q:
+            hits=search_controlled_library(library_records,q)
+            if hits:
+                st.dataframe(pd.DataFrame(hits),use_container_width=True,hide_index=True)
+                st.caption("Cada resultado conserva documento, categoría y página. Una referencia técnica no se interpreta automáticamente como obligación normativa.")
+            else:
+                st.warning("No se encontró respaldo para esa búsqueda en los documentos cargados. El sistema no buscará una fuente alternativa en Internet.")
+
 
 # Versión 2.0: el motor técnico no depende de que el usuario pulse el botón
 # después de cada despliegue. Se recalcula automáticamente cuando cambia
@@ -1014,7 +1070,7 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe Técnico 2.1 (PDF)",
+        "📄 Generar Informe Técnico 2.2 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
