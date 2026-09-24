@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 2.2")
-st.caption("Revisión técnica 2.2: incorpora una Biblioteca Técnica Controlada. La revisión normativa utiliza exclusivamente documentos PDF cargados por el usuario; no consulta Internet.")
+st.title("🛣️ IA Revisor Vial — Versión 2.4")
+st.caption("Revisión técnica 2.4: integra automáticamente la Biblioteca Técnica Controlada en la revisión. Sólo utiliza los PDF cargados por el usuario; no consulta Internet.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -813,7 +813,7 @@ def make_pdf(project,source,n_pages,obs):
     story=[
         Spacer(1,1.1*cm),
         Paragraph("INFORME TÉCNICO DE REVISIÓN VIAL",title),
-        Paragraph("IA Revisor Vial — Versión 2.2",subtitle),Spacer(1,14),
+        Paragraph("IA Revisor Vial — Versión 2.4",subtitle),Spacer(1,14),
         Paragraph(f"<b>Proyecto:</b> {project}",body),
         Paragraph(f"<b>Documento revisado:</b> {source}",body),
         Paragraph(f"<b>Extensión:</b> {n_pages} páginas",body),Spacer(1,10),
@@ -899,6 +899,61 @@ def extract_library_pdf(data, filename, category):
         if txt:
             rows.append({"Documento":filename,"Tipo":category,"Página":i+1,"Texto":txt})
     return rows
+
+
+
+def automatic_library_crosscheck(findings, records, max_per_finding=3):
+    """Cruza hallazgos técnicos con la biblioteca cerrada.
+    No declara incumplimientos por coincidencia textual: entrega fuentes candidatas
+    trazables para validación profesional.
+    """
+    if not findings or not records:
+        return []
+    stop={"para","como","entre","desde","hasta","sobre","este","esta","estos","estas","del","las","los","una","uno","que","con","sin","por","más","mas","respecto","escenario","proyecto","revisión","tecnica","técnica","alerta","pagina","página"}
+    out=[]
+    seen=set()
+    for f in findings:
+        base=clean(f.get("Materia","")+" "+f.get("Hallazgo",""))
+        words=[w.lower() for w in re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+",base) if len(w)>=4]
+        words=[w for w in words if w not in stop]
+        # términos distintivos, sin números aislados de los resultados del estudio
+        terms=[]
+        for w in words:
+            if w.isdigit(): continue
+            if w not in terms: terms.append(w)
+        terms=terms[:10]
+        scored=[]
+        for r in records:
+            low=r["Texto"].lower()
+            matches=[t for t in terms if t in low]
+            if len(matches)<2: continue
+            score=sum(low.count(t) for t in matches)+5*len(matches)
+            scored.append((score,r,matches))
+        scored.sort(key=lambda x:-x[0])
+        for score,r,matches in scored[:max_per_finding]:
+            key=(f.get("ID",""),r["Documento"],r["Página"])
+            if key in seen: continue
+            seen.add(key)
+            low=r["Texto"].lower()
+            positions=[low.find(t) for t in matches if low.find(t)>=0]
+            pos=min(positions) if positions else 0
+            frag=clean(r["Texto"][max(0,pos-220):min(len(r["Texto"]),pos+650)])
+            tipo=r["Tipo"]
+            if tipo=="NORMATIVA OBLIGATORIA":
+                resultado="FUENTE NORMATIVA CANDIDATA — validar aplicabilidad antes de declarar incumplimiento"
+            else:
+                resultado="REFERENCIA TÉCNICA CANDIDATA — apoyo para revisión; no constituye obligación normativa"
+            out.append({
+                "Hallazgo ID":f.get("ID","—"),
+                "Materia":f.get("Materia",""),
+                "Documento":r["Documento"],
+                "Tipo":tipo,
+                "Página fuente":r["Página"],
+                "Coincidencias":", ".join(matches[:6]),
+                "Resultado":resultado,
+                "Fragmento":frag
+            })
+    return out
 
 def search_controlled_library(records, query, max_results=30):
     q=clean(query).lower()
@@ -1012,6 +1067,11 @@ confirmed_all = review_results["confirmed"]
 alerts_all = review_results["alerts"]
 checks_all = review_results["checks"]
 
+# 2.4: la biblioteca participa automáticamente en la revisión.
+# Se cruzan observaciones y alertas con las fuentes cargadas, manteniendo
+# separada la evidencia normativa de las referencias técnicas.
+library_crosscheck = automatic_library_crosscheck(confirmed_all + alerts_all, library_records)
+
 m1, m2, m3 = st.columns(3)
 m1.metric("Observaciones confirmadas", len(confirmed_all))
 m2.metric("Alertas técnicas", len(alerts_all))
@@ -1023,7 +1083,7 @@ if alerts_all:
     pr = sum(1 for x in alerts_all if x.get("Prioridad") == "REVISIÓN")
     st.caption(f"Prioridad de alertas: Alta {pa} · Media {pm} · Revisión {pr}")
 
-tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "⚠️ Alertas comportamiento", "🧮 Comprobación aritmética", "📋 Matriz normativa consultor"])
+tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "⚠️ Alertas comportamiento", "🧮 Comprobación aritmética", "📋 Matriz normativa consultor", "📚 Cruce documental automático"])
 
 def show_rows(rows, empty_msg):
     if not rows:
@@ -1070,10 +1130,27 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe Técnico 2.2 (PDF)",
+        "📄 Generar Informe Técnico 2.4 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
+
+with tabs[7]:
+    st.caption("Cruce automático entre los hallazgos del estudio y la Biblioteca Técnica Controlada. No usa Internet. Una coincidencia textual no se convierte por sí sola en incumplimiento normativo.")
+    if not library_records:
+        st.info("Carga PDF en Normativa obligatoria y/o Referencias técnicas para activar el cruce documental automático.")
+    elif library_crosscheck:
+        df_cross=pd.DataFrame(library_crosscheck)
+        st.dataframe(df_cross,use_container_width=True,hide_index=True)
+        st.download_button(
+            "Descargar cruce documental CSV",
+            df_cross.to_csv(index=False).encode("utf-8-sig"),
+            file_name="cruce_documental_biblioteca_v24.csv",
+            mime="text/csv"
+        )
+        st.warning("Las fuentes marcadas como candidatas requieren validar su aplicabilidad, alcance, edición y contexto antes de formular un incumplimiento normativo.")
+    else:
+        st.info("No se encontraron coincidencias suficientes entre los hallazgos actuales y la biblioteca cargada.")
 
 st.caption("Criterio de trabajo: GS Proyecto ≤ 0,85 aceptable; >0,85 sobre umbral; >1,00 sobresaturado. El impacto se calcula únicamente como GS Proyecto − GS Base. No se usan otros porcentajes de la evidencia para clasificar el impacto.")
 
