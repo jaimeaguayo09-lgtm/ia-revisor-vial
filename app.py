@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Prototipo 0.6")
-st.caption("Revisión consolidada por arco y período: compara Actual → Base → Proyecto → Mitigado y reduce alertas repetitivas.")
+st.title("🛣️ IA Revisor Vial — Prototipo 0.7")
+st.caption("Revisión priorizada por arco y período: consolida escenarios y asigna prioridad técnica según magnitud y saturación.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -245,6 +245,28 @@ def technical_checks(pages, selected):
                 "Acción requerida":"Continuar con controles técnicos específicos."
             })
 
+    # Priorización técnica: no equivale a incumplimiento ni a juicio normativo.
+    # Alta: valores >100% o aumentos Base→Proyecto >=10 pp.
+    # Media: valores >85% o aumentos >=5 pp.
+    # Revisión: variaciones menores que conviene mantener trazadas.
+    for row in alerts:
+        txt = (row.get("Hallazgo","") + " " + row.get("Evidencia","")).lower()
+        nums = [int(x) for x in re.findall(r"(?<!\d)(\d{1,3})\s*%", txt)]
+        deltas = [abs(int(x)) for x in re.findall(r"([+-]\d+)\s+puntos", txt)]
+        maxpct = max(nums) if nums else 0
+        maxdelta = max(deltas) if deltas else 0
+        if maxpct > 100 or maxdelta >= 10:
+            row["Prioridad"] = "ALTA"
+        elif maxpct > 85 or maxdelta >= 5:
+            row["Prioridad"] = "MEDIA"
+        else:
+            row["Prioridad"] = "REVISIÓN"
+
+    for row in confirmed:
+        row["Prioridad"] = "ALTA"
+    for row in conforms:
+        row["Prioridad"] = "—"
+
     for prefix, rows in [("OBS",confirmed),("ALT",alerts),("CHK",conforms)]:
         for i,row in enumerate(rows,1):
             row["ID"]=f"{prefix}-{i:03d}"
@@ -313,6 +335,12 @@ m1.metric("Observaciones confirmadas", len(confirmed))
 m2.metric("Alertas técnicas", len(alerts))
 m3.metric("Comprobaciones", len(conforms))
 
+if alerts:
+    pa = sum(1 for x in alerts if x.get("Prioridad") == "ALTA")
+    pm = sum(1 for x in alerts if x.get("Prioridad") == "MEDIA")
+    pr = sum(1 for x in alerts if x.get("Prioridad") == "REVISIÓN")
+    st.caption(f"Prioridad de alertas: Alta {pa} · Media {pm} · Revisión {pr}")
+
 tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones"])
 
 def show_rows(rows, empty_msg):
@@ -320,10 +348,13 @@ def show_rows(rows, empty_msg):
         st.info(empty_msg)
         return
     df = pd.DataFrame(rows)
-    st.dataframe(df[["ID","Página","Materia","Hallazgo","Comprobación","Clasificación"]],
-                 use_container_width=True, hide_index=True)
+    cols = ["ID","Prioridad","Página","Materia","Hallazgo","Comprobación","Clasificación"]
+    cols = [c for c in cols if c in df.columns]
+    st.dataframe(df[cols], use_container_width=True, hide_index=True)
     chosen = st.selectbox("Ver detalle", [x["ID"] for x in rows], key="detail_"+rows[0]["ID"][:3])
     x = next(y for y in rows if y["ID"] == chosen)
+    if "Prioridad" in x:
+        st.markdown(f"**Prioridad técnica:** {x['Prioridad']}")
     st.markdown(f"**Página(s):** {x['Página']}")
     st.markdown(f"**Hallazgo:** {x['Hallazgo']}")
     st.markdown(f"**Comprobación:** {x['Comprobación']}")
