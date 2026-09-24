@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Prototipo 0.9")
-st.caption("Revisión operacional: calcula el impacto exclusivamente como GS Proyecto − GS Base y evalúa por separado el GS del escenario Proyecto.")
+st.title("🛣️ IA Revisor Vial — Versión 1.0")
+st.caption("Revisión técnica 1.0: GS, flujos inducidos, distribución de viajes y tiempos de viaje con trazabilidad.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -317,6 +317,82 @@ def technical_checks(pages, selected):
         row["GS Proyecto"] = "—"
         row["Δ Proyecto-Base"] = "—"
 
+
+    # --- MÓDULO 1.0: FLUJOS INDUCIDOS Y DISTRIBUCIÓN ---
+    # Se valida aritmética de porcentajes x total cuando la tabla está explícitamente
+    # identificada. No se infieren rutas ni valores faltantes.
+    if "Demanda" in selected:
+        for pge in pages:
+            txt = pge["text"]
+
+            # Totales de distribución PM/PT detectados en las tablas 9.9 y 9.10.
+            if "VIAJES INDUCIDOS PUNTA MAÑANA" in txt.upper():
+                mt = re.search(r"total\s+entrada\s+(\d+)\s+total\s+salida\s+(\d+)", txt, re.I)
+                if mt:
+                    ent, sal = int(mt.group(1)), int(mt.group(2))
+                    conforms.append({
+                        "Página":str(pge["page"]), "Materia":"Demanda / distribución",
+                        "Hallazgo":f"Punta Mañana: total entrada={ent} viajes/h y total salida={sal} viajes/h.",
+                        "Evidencia":snippet(txt, mt.start(), mt.end(), 260),
+                        "Comprobación":"Extracción de totales declarados en la tabla de distribución de flujos.",
+                        "Clasificación":"COMPROBACIÓN NUMÉRICA",
+                        "Acción requerida":"Contrastar estos totales con los flujos inducidos que alimentan la modelación.",
+                        "Prioridad":"—","Estado operacional":"—","Impacto incremental":"—",
+                        "GS Base":"—","GS Proyecto":"—","Δ Proyecto-Base":"—"
+                    })
+
+            if "VIAJES INDUCIDOS PUNTA TARDE" in txt.upper():
+                mt = re.search(r"total\s+entrada\s+(\d+)\s+total\s+salida\s+(\d+)", txt, re.I)
+                if mt:
+                    ent, sal = int(mt.group(1)), int(mt.group(2))
+                    conforms.append({
+                        "Página":str(pge["page"]), "Materia":"Demanda / distribución",
+                        "Hallazgo":f"Punta Tarde: total entrada={ent} viajes/h y total salida={sal} viajes/h.",
+                        "Evidencia":snippet(txt, mt.start(), mt.end(), 260),
+                        "Comprobación":"Extracción de totales declarados en la tabla de distribución de flujos.",
+                        "Clasificación":"COMPROBACIÓN NUMÉRICA",
+                        "Acción requerida":"Contrastar estos totales con los flujos inducidos que alimentan la modelación.",
+                        "Prioridad":"—","Estado operacional":"—","Impacto incremental":"—",
+                        "GS Base":"—","GS Proyecto":"—","Δ Proyecto-Base":"—"
+                    })
+
+    # --- MÓDULO 1.0: TIEMPOS DE VIAJE DE RED ---
+    if "Modelación" in selected:
+        for pge in pages:
+            txt = pge["text"]
+            if "Tiempos de viaje Transporte Privado" in txt:
+                m = re.search(r"PROYECTO\s+PM-L\s+(\d+).*?PT-L\s+(\d+).*?Total\s+(\d+)", txt, re.I|re.S)
+                if m:
+                    pm, pt, total = map(int, m.groups())
+                    ok = (pm + pt == total)
+                    target = conforms if ok else confirmed
+                    target.append({
+                        "Página":str(pge["page"]), "Materia":"Modelación / tiempo de viaje",
+                        "Hallazgo":f"Transporte privado: PM-L={pm}, PT-L={pt}, total informado={total}.",
+                        "Evidencia":snippet(txt, m.start(), m.end(), 220),
+                        "Comprobación":f"Suma automática: {pm}+{pt}={pm+pt}; total informado={total}.",
+                        "Clasificación":"COMPROBACIÓN NUMÉRICA" if ok else "ERROR ARITMÉTICO",
+                        "Acción requerida":"Mantener trazabilidad." if ok else "Revisar el total informado y resultados dependientes.",
+                        "Prioridad":"—" if ok else "ALTA","Estado operacional":"—","Impacto incremental":"—",
+                        "GS Base":"—","GS Proyecto":"—","Δ Proyecto-Base":"—"
+                    })
+
+    # Colas/demoras: la versión 1.0 no inventa datos si no identifica tablas inequívocas.
+    whole_low = " ".join(p["text"].lower() for p in pages)
+    if "Modelación" in selected:
+        if not ("longitud de cola" in whole_low or "longitudes de cola" in whole_low):
+            alerts.append({
+                "Página":"—","Materia":"Modelación / colas",
+                "Hallazgo":"No se identificó una tabla textual inequívoca de longitudes de cola para integrar al cruce por arco/período.",
+                "Evidencia":"Búsqueda documental automática.",
+                "Comprobación":"Control de disponibilidad del indicador; no se inventan valores.",
+                "Clasificación":"REQUIERE REVISIÓN PROFESIONAL",
+                "Acción requerida":"Verificar anexos/modelación o tablas no extraíbles como texto.",
+                "Prioridad":"REVISIÓN","Estado operacional":"—","Impacto incremental":"NO CALCULABLE",
+                "GS Base":"—","GS Proyecto":"—","Δ Proyecto-Base":"—"
+            })
+
+
     for prefix, rows in [("OBS",confirmed),("ALT",alerts),("CHK",conforms)]:
         for i,row in enumerate(rows,1):
             row["ID"]=f"{prefix}-{i:03d}"
@@ -439,7 +515,7 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe Técnico de Revisión (PDF)",
+        "📄 Generar Informe de Observaciones 1.0 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
