@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.9.9")
-st.caption("Revisión técnica 1.9.9: centraliza observaciones confirmadas, alertas y comprobaciones para que resumen, pestañas, CSV y PDF utilicen exactamente los mismos resultados.")
+st.title("🛣️ IA Revisor Vial — Versión 2.0")
+st.caption("Revisión técnica 2.0: ejecuta automáticamente el motor técnico al cargar o cambiar el PDF y mantiene sincronizadas observaciones, alertas y comprobaciones.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -879,9 +879,16 @@ pages=extract_pdf(up.getvalue())
 st.success(f"Documento cargado: {len(pages)} páginas")
 a,b,c=st.columns(3); a.metric("Páginas",len(pages)); b.metric("Módulos seleccionados",len(selected)); c.metric("Proyecto",project)
 
-if st.button("Analizar estudio",type="primary"):
+# Versión 2.0: el motor técnico no depende de que el usuario pulse el botón
+# después de cada despliegue. Se recalcula automáticamente cuando cambia
+# el PDF o la selección de módulos. El botón permite forzar el recálculo.
+import hashlib
+_analysis_key = hashlib.sha256(up.getvalue()).hexdigest() + "|" + "|".join(sorted(selected))
+_force_analysis = st.button("Analizar estudio", type="primary")
+if _force_analysis or st.session_state.get("analysis_key") != _analysis_key:
     with st.spinner("Ejecutando revisión técnica trazable..."):
         st.session_state["review04"] = analyze(pages, selected)
+        st.session_state["analysis_key"] = _analysis_key
 
 confirmed, alerts, conforms = st.session_state.get("review04", ([], [], []))
 

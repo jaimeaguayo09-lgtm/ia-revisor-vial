@@ -1,9 +1,8 @@
-# IA Revisor Vial — Versión 1.9.9
+# IA Revisor Vial — Versión 2.0
 
-- La pestaña **Observaciones confirmadas** integra el motor general y las observaciones aritméticas.
-- Contador, pestaña y PDF quedan consistentes.
-- El botón/nombre del informe se actualiza a 1.9.9.
-- No se modifica el motor de cálculo ni los parsers ya validados.
-
-Caso piloto esperado: 3 observaciones confirmadas visibles en la pestaña:
-AR-9.13, AR-9.15-4 y AR-9.15-5.
+Corrección de sincronización del motor de análisis:
+- ejecuta automáticamente el análisis técnico al cargar o cambiar el PDF;
+- vuelve a analizar si cambia la selección de módulos;
+- el botón «Analizar estudio» fuerza un recálculo manual;
+- observaciones confirmadas, alertas técnicas, comprobaciones, CSV y PDF usan las mismas colecciones de resultados;
+- conserva las 3 observaciones aritméticas confirmadas del caso piloto.
