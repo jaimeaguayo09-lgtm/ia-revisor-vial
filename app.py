@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 2.2")
-st.caption("Revisión técnica 2.2: incorpora una Biblioteca Técnica Controlada. La revisión normativa utiliza exclusivamente documentos PDF cargados por el usuario; no consulta Internet.")
+st.title("🛣️ IA Revisor Vial — Versión 2.3")
+st.caption("Revisión técnica 2.3: incorpora Biblioteca Técnica Controlada permanente desde el repositorio. La revisión normativa utiliza exclusivamente documentos autorizados; no consulta Internet.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -813,7 +813,7 @@ def make_pdf(project,source,n_pages,obs):
     story=[
         Spacer(1,1.1*cm),
         Paragraph("INFORME TÉCNICO DE REVISIÓN VIAL",title),
-        Paragraph("IA Revisor Vial — Versión 2.2",subtitle),Spacer(1,14),
+        Paragraph("IA Revisor Vial — Versión 2.3",subtitle),Spacer(1,14),
         Paragraph(f"<b>Proyecto:</b> {project}",body),
         Paragraph(f"<b>Documento revisado:</b> {source}",body),
         Paragraph(f"<b>Extensión:</b> {n_pages} páginas",body),Spacer(1,10),
@@ -916,14 +916,37 @@ def search_controlled_library(records, query, max_results=30):
     out.sort(key=lambda x:(-x["Relevancia"],x["Documento"],x["Página"]))
     return out[:max_results]
 
+from pathlib import Path
+
+@st.cache_data(show_spinner=False)
+def load_permanent_library():
+    records=[]
+    base=Path(__file__).resolve().parent
+    folders=[
+        (base / "biblioteca_normativa", "NORMATIVA OBLIGATORIA"),
+        (base / "biblioteca_referencias", "REFERENCIA TÉCNICA"),
+    ]
+    docs=[]
+    for folder, category in folders:
+        if not folder.exists():
+            continue
+        for pdf_path in sorted(folder.glob("*.pdf")):
+            try:
+                data=pdf_path.read_bytes()
+                recs=extract_library_pdf(data,pdf_path.name,category)
+                records.extend(recs)
+                docs.append({"Documento":pdf_path.name,"Tipo":category,"Páginas":len(recs)})
+            except Exception as e:
+                docs.append({"Documento":pdf_path.name,"Tipo":category,"Páginas":0,"Estado":f"Error: {e}"})
+    return records, docs
+
 with st.sidebar:
     st.header("Caso")
     project=st.text_input("Nombre","Caso Piloto 001")
     up=st.file_uploader("Estudio PDF",type=["pdf"])
-    st.header("📚 Biblioteca técnica controlada")
-    st.caption("Modo cerrado: sólo se utilizan los documentos cargados aquí. No se realizan búsquedas en Internet.")
-    norm_files=st.file_uploader("Normativa obligatoria",type=["pdf"],accept_multiple_files=True,key="normativa_controlada")
-    ref_files=st.file_uploader("Referencias técnicas",type=["pdf"],accept_multiple_files=True,key="referencias_controladas")
+    st.header("📚 Biblioteca técnica permanente")
+    st.caption("Modo cerrado. Los PDF permanentes se leen desde /biblioteca_normativa y /biblioteca_referencias del repositorio GitHub. No se realizan búsquedas en Internet.")
+    st.caption("Carga nuevos documentos directamente en esas carpetas de GitHub para que permanezcan disponibles después de reinicios y despliegues.")
     st.header("Módulos")
     selected=[m for m in MODULES if st.checkbox(m,True,key=m)]
     st.info("Regla 0.3: si no existe evidencia suficiente para demostrar un hallazgo, no se formula como observación.")
@@ -936,28 +959,27 @@ st.success(f"Documento cargado: {len(pages)} páginas")
 a,b,c=st.columns(3); a.metric("Páginas",len(pages)); b.metric("Módulos seleccionados",len(selected)); c.metric("Proyecto",project)
 
 
-# Biblioteca Técnica Controlada 2.2
-library_records=[]
-for f in (norm_files or []):
-    library_records.extend(extract_library_pdf(f.getvalue(), f.name, "NORMATIVA OBLIGATORIA"))
-for f in (ref_files or []):
-    library_records.extend(extract_library_pdf(f.getvalue(), f.name, "REFERENCIA TÉCNICA"))
+# Biblioteca Técnica Controlada permanente 2.3
+library_records, permanent_docs = load_permanent_library()
 
-with st.expander("📚 Biblioteca Técnica Controlada — búsqueda manual", expanded=False):
+with st.expander("📚 Biblioteca Técnica Controlada — permanente", expanded=False):
     st.success("🔒 Modo biblioteca cerrada ACTIVADO — Internet deshabilitado para la revisión normativa.")
-    n_norm=len(norm_files or []); n_ref=len(ref_files or [])
-    st.write(f"Documentos cargados: **{n_norm+n_ref}** · Normativa: **{n_norm}** · Referencias: **{n_ref}** · Páginas indexadas: **{len(library_records)}**")
+    n_norm=sum(1 for d in permanent_docs if d.get("Tipo")=="NORMATIVA OBLIGATORIA")
+    n_ref=sum(1 for d in permanent_docs if d.get("Tipo")=="REFERENCIA TÉCNICA")
+    st.write(f"Documentos permanentes: **{len(permanent_docs)}** · Normativa: **{n_norm}** · Referencias: **{n_ref}** · Páginas indexadas: **{len(library_records)}**")
+    if permanent_docs:
+        st.dataframe(pd.DataFrame(permanent_docs),use_container_width=True,hide_index=True)
     if not library_records:
-        st.info("Carga uno o más PDF en la barra lateral. La aplicación no completará requisitos normativos con fuentes externas.")
+        st.info("La biblioteca permanente está vacía. Agrega PDF a las carpetas biblioteca_normativa o biblioteca_referencias del repositorio y vuelve a desplegar la aplicación.")
     else:
-        q=st.text_input("🔎 Buscar exclusivamente en la biblioteca cargada",placeholder="Ej.: grado de saturación, art. 3.6.11, señalización, estacionamientos")
+        q=st.text_input("🔎 Buscar exclusivamente en la biblioteca permanente",placeholder="Ej.: grado de saturación, art. 3.6.11, señalización, estacionamientos")
         if q:
             hits=search_controlled_library(library_records,q)
             if hits:
                 st.dataframe(pd.DataFrame(hits),use_container_width=True,hide_index=True)
                 st.caption("Cada resultado conserva documento, categoría y página. Una referencia técnica no se interpreta automáticamente como obligación normativa.")
             else:
-                st.warning("No se encontró respaldo para esa búsqueda en los documentos cargados. El sistema no buscará una fuente alternativa en Internet.")
+                st.warning("No se encontró respaldo en la biblioteca autorizada. El sistema no buscará una fuente alternativa en Internet.")
 
 
 # Versión 2.0: el motor técnico no depende de que el usuario pulse el botón
@@ -1070,7 +1092,7 @@ if all_report:
         "revision_tecnica_revisor_vial.csv", "text/csv"
     )
     c2.download_button(
-        "📄 Generar Informe Técnico 2.2 (PDF)",
+        "📄 Generar Informe Técnico 2.3 (PDF)",
         make_pdf(project, up.name, len(pages), all_report),
         "informe_tecnico_revision_vial.pdf", "application/pdf"
     )
