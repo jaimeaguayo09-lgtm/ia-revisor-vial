@@ -12,8 +12,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 st.set_page_config(page_title="IA Revisor Vial", page_icon="🛣️", layout="wide")
-st.title("🛣️ IA Revisor Vial — Versión 1.1")
-st.caption("Revisión técnica 1.1: ficha consolidada por arco/período, GS Base → Proyecto → Mitigado, impacto incremental y trazabilidad.")
+st.title("🛣️ IA Revisor Vial — Versión 1.2")
+st.caption("Revisión técnica 1.2: matriz final de observaciones, evidencia numérica, acción requerida y trazabilidad.")
 
 MODULES = ["Antecedentes","Aforos","Demanda","Capacidad y saturación","Modelación","Geometría",
            "Señalización y demarcación","Consistencia documental","Medidas de mitigación"]
@@ -439,12 +439,14 @@ def build_arc_sheet(pages):
             else:
                 impact = "BAJO (0,01–0,04)"
 
-            if p is not None and (p > 100 or (delta is not None and delta >= 10)):
-                priority = "ALTA"
-            elif p is not None and (p > 85 or (delta is not None and delta >= 5)):
-                priority = "MEDIA"
+            if b is None or p is None:
+                priority = "REQUIERE REVISIÓN PROFESIONAL"
+            elif p > 100 or delta >= 10:
+                priority = "OBSERVACIÓN — ALTA"
+            elif p > 85 or delta >= 5:
+                priority = "OBSERVACIÓN — MEDIA"
             else:
-                priority = "REVISIÓN"
+                priority = "SIN OBSERVACIÓN"
 
             if p is not None and m is not None:
                 if m < p:
@@ -471,6 +473,54 @@ def build_arc_sheet(pages):
                 "Prioridad": priority,
                 "Página(s)": ", ".join(dict.fromkeys(pages_used)) or "—"
             })
+    return rows
+
+
+def build_consultant_matrix(pages):
+    sheet = build_arc_sheet(pages)
+    rows = []
+    n = 1
+    for r in sheet:
+        decision = r["Prioridad"]
+        # The final matrix focuses on items that require action/review.
+        if decision == "SIN OBSERVACIÓN":
+            continue
+
+        evidence = (
+            f"GS Base={r['GS Base']}; GS Proyecto={r['GS Proyecto']}; "
+            f"Δ Proyecto-Base={r['Δ Proyecto-Base']}; GS Mitigado={r['GS Mitigado']}; "
+            f"Δ Mitigado-Proyecto={r['Δ Mitigado-Proyecto']}."
+        )
+
+        if decision.startswith("OBSERVACIÓN"):
+            obs = (
+                f"Arco {r['Arco']} — {r['Período']}: revisar condición operacional "
+                f"({r['Estado operacional']}) e impacto incremental ({r['Impacto incremental']})."
+            )
+            action = (
+                "Justificar técnicamente el resultado y verificar la suficiencia de las medidas de mitigación, "
+                "manteniendo trazabilidad con la modelación y cuadros del estudio."
+            )
+        else:
+            obs = (
+                f"Arco {r['Arco']} — {r['Período']}: no fue posible reconstruir de forma completa "
+                "la comparación Base → Proyecto."
+            )
+            action = "Completar o aclarar la trazabilidad de los datos antes de emitir conclusión técnica."
+
+        rows.append({
+            "N°": n,
+            "Clasificación": decision,
+            "Arco": r["Arco"],
+            "Período": r["Período"],
+            "Página(s)": r["Página(s)"],
+            "Antecedente revisado": "Grado de saturación / evolución de escenarios",
+            "Observación": obs,
+            "Evidencia numérica": evidence,
+            "Efecto mitigación": r["Efecto mitigación"],
+            "Acción requerida": action
+        })
+        n += 1
     return rows
 
 def analyze(pages, selected):
@@ -542,7 +592,7 @@ if alerts:
     pr = sum(1 for x in alerts if x.get("Prioridad") == "REVISIÓN")
     st.caption(f"Prioridad de alertas: Alta {pa} · Media {pm} · Revisión {pr}")
 
-tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco"])
+tabs = st.tabs(["🔴 Observaciones confirmadas", "🟠 Alertas para revisión", "🟢 Comprobaciones", "📊 Ficha consolidada por arco", "📋 Matriz final consultor"])
 
 def show_rows(rows, empty_msg):
     if not rows:
@@ -613,4 +663,21 @@ with tabs[3]:
         )
     else:
         st.info("No se identificaron tablas de GS suficientes para construir la ficha consolidada.")
+
+
+
+with tabs[4]:
+    matrix = build_consultant_matrix(pages)
+    st.caption("Matriz destinada a formular observaciones al consultor. Se excluyen automáticamente los arcos clasificados SIN OBSERVACIÓN.")
+    if matrix:
+        df_matrix = pd.DataFrame(matrix)
+        st.dataframe(df_matrix, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Descargar matriz de observaciones CSV",
+            df_matrix.to_csv(index=False).encode("utf-8-sig"),
+            file_name="matriz_observaciones_consultor_v12.csv",
+            mime="text/csv"
+        )
+    else:
+        st.success("No se generaron observaciones de GS para remitir al consultor con los criterios actuales.")
 

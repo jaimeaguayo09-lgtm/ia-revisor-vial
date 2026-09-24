@@ -1,15 +1,17 @@
-# IA Revisor Vial — Versión 1.1
+# IA Revisor Vial — Versión 1.2
 
-Novedad principal:
-- Ficha consolidada por arco y período.
-- GS Base → Proyecto → Mitigado.
-- Δ Proyecto−Base calculado exclusivamente con esos dos escenarios.
-- Δ Mitigado−Proyecto.
-- Estado operacional con criterio de trabajo GS <= 0,85.
-- Impacto incremental separado del estado operacional.
-- Efecto de mitigación.
-- Prioridad y páginas de trazabilidad.
-- Descarga CSV de la ficha consolidada.
+Cambios principales:
+- La ficha consolidada deja de marcar todos los casos conformes como REVISIÓN.
+- Clasificación de salida:
+  - SIN OBSERVACIÓN
+  - OBSERVACIÓN — MEDIA
+  - OBSERVACIÓN — ALTA
+  - REQUIERE REVISIÓN PROFESIONAL
+- Nueva pestaña “Matriz final consultor”.
+- La matriz excluye los casos SIN OBSERVACIÓN.
+- Incluye arco, período, páginas, antecedente revisado, observación, evidencia numérica,
+  efecto de mitigación y acción requerida.
+- Descarga CSV de la matriz.
 
-Se mantienen los módulos 1.0 de flujos inducidos, distribución y tiempos de viaje.
-No se inventan datos faltantes.
+Se mantiene el criterio operacional de trabajo GS <= 0,85 y la separación entre
+estado operacional e impacto incremental. Los datos faltantes no se infieren.
